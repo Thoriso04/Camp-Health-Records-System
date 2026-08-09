@@ -1,24 +1,14 @@
 {
     "name": "chrs",
     "version": "1.0.0",
-    "description": "Set-Content -Path README.md -Value @\"\r # Camp Health Records System (CHRS)",
+    "description": "",
     "main": "electron/main.js",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
         "start": "electron ."
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/Thoriso04/Camp-Health-Records-System.git"
     },
     "keywords": [],
     "author": "",
     "license": "ISC",
-    "type": "commonjs",
-    "bugs": {
-        "url": "https://github.com/Thoriso04/Camp-Health-Records-System/issues"
-    },
-    "homepage": "https://github.com/Thoriso04/Camp-Health-Records-System#readme",
     "dependencies": {
         "bcryptjs": "^3.0.3",
         "better-sqlite3": "^13.0.3",
