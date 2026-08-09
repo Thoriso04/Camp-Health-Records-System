@@ -1,33 +1,33 @@
 {
-    "name":  "chrs",
-    "version":  "1.0.0",
-    "description":  "",
-    "main":  "electron/main.js",
-    "scripts":  {
-                    "start":  "electron ."
-                },
-    "keywords":  [
-
-                 ],
-    "author":  "",
-    "license":  "ISC",
-    "dependencies":  {
-                         "bcrypt":  "^5.1.1",
-                         "better-sqlite3":  "^11.8.1",
-                         "electron":  "^43.3.0"
-                     },
-    "devDependencies":  {
-                            "@types/node":  "^22.13.1",
-                            "@types/react":  "^19.0.8",
-                            "@types/react-dom":  "^19.0.3",
-                            "jest":  "^29.7.0",
-                            "playwright":  "^1.50.1",
-                            "react":  "^19.0.0",
-                            "react-dom":  "^19.0.0",
-                            "tailwindcss":  "^4.0.6",
-                            "typescript":  "^5.7.3"
-                        },
-    "overrides":  {
-                      "tar":  "^7.5.21"
-                  }
+    "name": "chrs",
+    "version": "1.0.0",
+    "description": "",
+    "main": "electron/main.js",
+    "scripts": {
+        "start": "electron ."
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "bcrypt": "^5.1.1",
+        "better-sqlite3": "^11.8.1",
+        "electron": "^43.3.0",
+        "lucide-react": "^1.30.0",
+        "react-router-dom": "^7.18.2"
+    },
+    "devDependencies": {
+        "@types/node": "^22.13.1",
+        "@types/react": "^19.0.8",
+        "@types/react-dom": "^19.0.3",
+        "jest": "^29.7.0",
+        "playwright": "^1.50.1",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "tailwindcss": "^4.0.6",
+        "typescript": "^5.7.3"
+    },
+    "overrides": {
+        "tar": "^7.5.21"
+    }
 }
