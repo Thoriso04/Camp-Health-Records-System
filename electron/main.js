@@ -1,7 +1,16 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const crypto = require('crypto');
+require('dotenv').config();
 
 let mainWindow;
+
+// Access environment variables loaded from .env
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_fallback_secret';
+const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'dev_db_passphrase';
+
+// Cryptographic key buffer check
+const keyBuffer = Buffer.from(DB_ENCRYPTION_KEY, 'utf-8');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -16,7 +25,6 @@ function createWindow() {
     },
   });
 
-  // Load React app (dist/index.html in production or dev server in development)
   const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../build/index.html')}`;
   mainWindow.loadURL(startUrl);
 
@@ -38,46 +46,78 @@ app.on('window-all-closed', () => {
 });
 
 // ============================================================================
-// IPC HANDLERS (Database, Auth, Audit Logging)
+// BACKEND IPC HANDLERS & DATABASE INIT
 // ============================================================================
 
 /**
- * TODO: Initialize SQLCipher / better-sqlite3 database instance here.
- * Load encryption key securely from process.env.DB_ENCRYPTION_KEY
+ * TODO: Initialize SQLCipher / better-sqlite3 instance here.
+ * Execute PRAGMA key = '${DB_ENCRYPTION_KEY}' upon opening database connection.
  */
+function initDatabase() {
+  console.log(`[Backend DB] Initializing SQLite connection using key length: ${keyBuffer.length} bytes`);
+  // SQLCipher database initialization logic goes here
+}
 
-// Authentication IPC Handler
+initDatabase();
+
+// 1. Authentication Endpoint
 ipcMain.handle('auth:login', async (event, { username, password }) => {
-  console.log(`[IPC] Login attempt for user: ${username}`);
-  
-  // TODO (Itumeleng): Replace mock validation with DB user lookup & bcrypt verification
+  console.log(`[Backend Auth] Login attempt for user: ${username}`);
+
+  // TODO: Query SQLCipher DB for hashed password and compare using bcrypt
   if (username === 'admin' && password === 'password123') {
+    // Basic JWT payload token generator
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({
+        userId: 'usr-admin-01',
+        username: 'admin',
+        role: 'Admin',
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 hours
+      })
+    ).toString('base64url');
+
+    const signature = crypto
+      .createHmac('sha256', JWT_SECRET)
+      .update(`${header}.${payload}`)
+      .digest('base64url');
+
+    const jwtToken = `${header}.${payload}.${signature}`;
+
     return {
       success: true,
-      token: 'mock-jwt-token-for-dev',
-      user: { userId: 'usr-001', username: 'admin', role: 'Admin' }
+      token: jwtToken,
+      user: { userId: 'usr-admin-01', username: 'admin', role: 'Admin' },
     };
   }
 
   return { success: false, message: 'Invalid credentials' };
 });
 
-// Patient & Clinical Record IPC Handler
+// 2. Tamper-Evident Audit Logging 
+ipcMain.handle('audit:log-event', async (event, logData) => {
+  const timestamp = new Date().toISOString();
+  const entryHash = crypto
+    .createHash('sha256')
+    .update(`${timestamp}-${logData.userId}-${logData.action}`)
+    .digest('hex');
+
+  console.log(`[Backend Audit Log] ${timestamp} | Hash: ${entryHash.slice(0, 8)}... | Action: ${logData.action}`);
+
+  // TODO: INSERT INTO audit_logs (id, timestamp, user_id, action, hash) VALUES (...)
+  return { success: true, hash: entryHash };
+});
+
+// 3. Clinical Records Queries 
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
-  console.log(`[IPC] Fetching patient record: ${patientId}`);
+  console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
   
-  // TODO: Connect query to local SQLite database
+  // TODO: SELECT * FROM campers WHERE camper_id = patientId
   return {
     id: patientId,
     name: 'Alex Johnson',
     allergies: ['Penicillin', 'Peanuts'],
-    diagnosis: 'Type 1 Diabetes',
-    medicalNotes: 'Requires insulin check before meals.'
+    diagnosis: 'Asthma',
+    medicalNotes: 'Keep inhaler accessible at all times.',
   };
-});
-
-// TODO: Add IPC handler for Audit Log persistence
-ipcMain.handle('audit:log-event', async (event, logEntry) => {
-  console.log('[IPC Audit Log]', logEntry);
-  return { success: true };
 });

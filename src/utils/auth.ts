@@ -1,4 +1,18 @@
-import { jwtDecode } from 'jwt-decode';
+
+
+declare const require: any;
+let jwtDecode: any;
+try {
+  const jwtDecodeModule = typeof require === 'function' ? require('jwt-decode') : undefined;
+  jwtDecode = jwtDecodeModule?.jwtDecode || jwtDecodeModule;
+  if (!jwtDecode) throw new Error('jwt-decode not available');
+} catch {
+  jwtDecode = (token: string) => {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(Buffer.from(base64, 'base64').toString());
+  };
+}
 
 export interface DecodedToken {
   userId: string;
@@ -23,7 +37,7 @@ export const getDecodedToken = (): DecodedToken | null => {
   const token = getAuthToken();
   if (!token) return null;
   try {
-    return jwtDecode<DecodedToken>(token);
+    return jwtDecode(token);
   } catch {
     return null;
   }
