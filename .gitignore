@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build & Packaging outputs
+dist/
+out/
+*.exe
+
+# Runtime database & Application data
+*.db
+*.db-journal
+*.sqlite
+%APPDATA%/CHRS/
+
+# Environment & Local Secrets
+.env
+*.key
+.DS_Store
