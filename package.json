@@ -13,11 +13,14 @@
         "bcryptjs": "^3.0.3",
         "better-sqlite3": "^13.0.3",
         "dotenv": "^17.4.2",
-        "electron": "^43.3.0"
+        "electron": "^43.3.0",
+        "lucide-react": "^1.31.0"
     },
     "devDependencies": {
         "@types/bcryptjs": "^2.4.6",
         "@types/node": "^26.2.0",
+        "@types/react": "^19.2.18",
+        "@types/react-dom": "^19.2.4",
         "jest": "^30.4.2",
         "playwright": "^1.62.1",
         "react": "^19.2.8",
