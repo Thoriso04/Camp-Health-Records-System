@@ -1,4 +1,3 @@
-import React from 'react';
 import { AlertTriangle, ShieldAlert } from 'lucide-react';
 
 export interface AllergyAlertProps {
@@ -7,11 +6,11 @@ export interface AllergyAlertProps {
   medicalNotes?: string;
 }
 
-export const AllergyAlertBanner: React.FC<AllergyAlertProps> = ({
+export const AllergyAlertBanner = ({
   allergies = [],
   diagnosis,
   medicalNotes,
-}) => {
+}: AllergyAlertProps) => {
   const hasAllergies = allergies && allergies.length > 0;
   const hasCriticalInfo = hasAllergies || diagnosis || medicalNotes;
 
