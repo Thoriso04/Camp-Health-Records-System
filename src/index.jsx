@@ -7,7 +7,7 @@ import './index.css';
 const container = document.getElementById('root');
 
 if (!container) {
-  throw new Error('Failed to find the root element. Ensure index.html contains <div id="root"></div>');
+  throw new Error('Failed to locate root element. Check index.html for <div id="root"></div>');
 }
 
 const root = createRoot(container);
