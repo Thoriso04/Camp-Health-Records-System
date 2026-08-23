@@ -1,4 +1,4 @@
-const { openEncryptedDatabase } = require('./database');
+const { openEncryptedDatabase } = require('../database/database');
 
 let db = null;
 
