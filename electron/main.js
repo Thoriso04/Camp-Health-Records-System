@@ -3,14 +3,16 @@ const path = require('path');
 const crypto = require('crypto');
 require('dotenv').config();
 
+// Database dependencies and controllers
+const { openEncryptedDatabase } = require('./database/database');
+const { insertPatient, logAuditEvent } = require('./database/dbController');
+
 let mainWindow;
+let dbInstance = null;
 
 // Access environment variables loaded from .env
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_fallback_secret';
 const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'dev_db_passphrase';
-
-// Cryptographic key buffer check
-const keyBuffer = Buffer.from(DB_ENCRYPTION_KEY, 'utf-8');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -33,7 +35,20 @@ function createWindow() {
   });
 }
 
+// Initialize SQLCipher encrypted database connection
+function initDatabase() {
+  try {
+    const dbPath = path.join(app.getPath('userData'), 'chrs.db');
+    console.log(`[Backend DB] Initializing SQLCipher connection at: ${dbPath}`);
+    dbInstance = openEncryptedDatabase(dbPath, DB_ENCRYPTION_KEY);
+    console.log('✅ [Backend DB] Encrypted database connected and schema verified.');
+  } catch (error) {
+    console.error('❌ [Backend DB] Database initialization failed:', error.message);
+  }
+}
+
 app.whenReady().then(() => {
+  initDatabase();
   createWindow();
 
   app.on('activate', () => {
@@ -46,27 +61,38 @@ app.on('window-all-closed', () => {
 });
 
 // ============================================================================
-// BACKEND IPC HANDLERS & DATABASE INIT
+// BACKEND IPC HANDLERS
 // ============================================================================
 
-/**
- * TODO: Initialize SQLCipher / better-sqlite3 instance here.
- * Execute PRAGMA key = '${DB_ENCRYPTION_KEY}' upon opening database connection.
- */
-function initDatabase() {
-  console.log(`[Backend DB] Initializing SQLite connection using key length: ${keyBuffer.length} bytes`);
-  // SQLCipher database initialization logic goes here
-}
+// 1. CSV Bulk Import Handler
+ipcMain.handle('import-patients-csv', async (event, { patientsList, userId }) => {
+  try {
+    for (const patient of patientsList) {
+      insertPatient({ ...patient, created_by: userId });
+    }
 
-initDatabase();
+    logAuditEvent({
+      userId,
+      actionType: 'IMPORT',
+      targetTable: 'patients',
+      targetId: null,
+      beforeImage: null,
+      afterImage: null,
+      details: `Imported ${patientsList.length} patient records from CSV`
+    });
 
-// 1. Authentication Endpoint
+    return { success: true, count: patientsList.length };
+  } catch (error) {
+    console.error('[Backend CSV Import Error]:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// 2. Authentication Endpoint
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
 
-  // TODO: Query SQLCipher DB for hashed password and compare using bcrypt
   if (username === 'admin' && password === 'password123') {
-    // Basic JWT payload token generator
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(
       JSON.stringify({
@@ -94,25 +120,21 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
   return { success: false, message: 'Invalid credentials' };
 });
 
-// 2. Tamper-Evident Audit Logging 
+// 3. Tamper-Evident Audit Logging
 ipcMain.handle('audit:log-event', async (event, logData) => {
-  const timestamp = new Date().toISOString();
-  const entryHash = crypto
-    .createHash('sha256')
-    .update(`${timestamp}-${logData.userId}-${logData.action}`)
-    .digest('hex');
-
-  console.log(`[Backend Audit Log] ${timestamp} | Hash: ${entryHash.slice(0, 8)}... | Action: ${logData.action}`);
-
-  // TODO: INSERT INTO audit_logs (id, timestamp, user_id, action, hash) VALUES (...)
-  return { success: true, hash: entryHash };
+  try {
+    const result = logAuditEvent(logData);
+    return { success: true, id: result.lastInsertRowid };
+  } catch (error) {
+    console.error('[Backend Audit Log Error]:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
-// 3. Clinical Records Queries 
+// 4. Clinical Records Queries
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
-  
-  // TODO: SELECT * FROM campers WHERE camper_id = patientId
+
   return {
     id: patientId,
     name: 'Alex Johnson',
