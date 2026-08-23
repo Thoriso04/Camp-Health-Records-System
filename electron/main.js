@@ -41,9 +41,9 @@ function initDatabase() {
     const dbPath = path.join(app.getPath('userData'), 'chrs.db');
     console.log(`[Backend DB] Initializing SQLCipher connection at: ${dbPath}`);
     dbInstance = openEncryptedDatabase(dbPath, DB_ENCRYPTION_KEY);
-    console.log('✅ [Backend DB] Encrypted database connected and schema verified.');
+    console.log('[Backend DB] Encrypted database connected and schema verified.');
   } catch (error) {
-    console.error('❌ [Backend DB] Database initialization failed:', error.message);
+    console.error('[Backend DB] Database initialization failed:', error.message);
   }
 }
 
