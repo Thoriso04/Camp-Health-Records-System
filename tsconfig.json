@@ -14,7 +14,8 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "types": ["node"]
+    "types": ["node", "jest"],
   },
   "include": ["src/**/*"]
 }
+
