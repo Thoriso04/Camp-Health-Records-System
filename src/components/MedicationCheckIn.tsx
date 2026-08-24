@@ -1,28 +1,33 @@
 import { useState } from 'react';
-import { Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { AllergyAlertBanner } from './AllergyAlertBanner';
+import SignaturePad from './SignaturePad';
 
 /**
- * FR-03: Camper Medication Check-In and Assessment
+ * Camper Medication Check-In and Assessment
  *
- * Mirrors the existing paper form (per FSD 7.1 — UI must mirror paper
- * layout). Sections, in paper-form order:
- *   1. Patient details (auto-populated, read-only)
- *   2. Medication table
- *   3. Initial Physical Assessment
- *   4. Clinician sign-off (mandatory — blocks save until complete)
+ * REBUILT against the real paper form (Fwd__Medical_forms.zip, received
+ * 24 Aug 2026), which is materially different from both the FSD's own
+ * description of FR-03 and the first version of this component. The
+ * real form has NO medication table with dosage/route/frequency
+ * columns and NO "vital signs" section — instead:
  *
- * OPEN ISSUE (OI-01 in the FSD): the Foundation hasn't provided the
- * final medication/dosage list yet, so "medication name" is free text
- * for now rather than a dropdown. Once OI-01 is resolved, swap the
- * input for a <select> or searchable combobox sourced from that list.
+ * Name/DOB, allergies Y/N, eyesight/hearing/mobility aids/prosthesis,
+ * assistance with daily living, TB screening flags, medication Y/N +
+ * handed-in Y/N + date, a simple numbered list of up to 5 current
+ * medications, current physical condition, dietary requirements,
+ * additional camper info/behavioral notes, and a medical person
+ * signature + date.
  *
- * NOTE: this calls apiService.request('medication:save-checkin', ...),
- * which does NOT exist in electron/main.js yet — there's no IPC handler
- * for it. Whoever owns the backend/database side (Juané?) needs to add
- * one. The shape it should accept is the SavePayload type below.
+ * These accessibility/daily-living/TB-screening fields were originally
+ * (incorrectly) placed on the Camper Check-In form — removed from
+ * there, since the real Registration/Indemnity form doesn't have them
+ * at all. They belong here.
+ *
+ * NOTE: apiService.request('medication:save-checkin', ...) still not a
+ * real IPC handler.
  */
 
 interface PatientSummary {
@@ -33,86 +38,63 @@ interface PatientSummary {
   allergies: string[];
 }
 
-interface MedicationRow {
-  id: string;
-  name: string;
-  dosage: string;
-  route: string;
-  frequency: string;
-  lastDoseTaken: string;
-  verified: boolean;
-}
-
-interface SavePayload {
-  patientId: string;
-  medications: MedicationRow[];
-  vitals: { temperature: string; bloodPressure: string; pulse: string; respiratoryRate: string };
-  generalAppearance: string;
-  newSymptoms: string;
-  clinicianName: string;
-  clinicianUserId?: string;
-}
-
 interface MedicationCheckInProps {
   patient: PatientSummary;
   onSaved?: () => void;
   onCancel?: () => void;
 }
 
-const emptyRow = (): MedicationRow => ({
-  id: crypto.randomUUID(),
-  name: '',
-  dosage: '',
-  route: '',
-  frequency: '',
-  lastDoseTaken: '',
-  verified: false,
-});
+function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-ink">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
 
 export default function MedicationCheckIn({ patient, onSaved, onCancel }: MedicationCheckInProps) {
   const { user } = useAuth();
 
-  const [medications, setMedications] = useState<MedicationRow[]>([emptyRow()]);
-  const [temperature, setTemperature] = useState('');
-  const [bloodPressure, setBloodPressure] = useState('');
-  const [pulse, setPulse] = useState('');
-  const [respiratoryRate, setRespiratoryRate] = useState('');
-  const [generalAppearance, setGeneralAppearance] = useState('');
-  const [newSymptoms, setNewSymptoms] = useState('');
-  const [clinicianName, setClinicianName] = useState(user?.username ?? '');
-  const [confirmed, setConfirmed] = useState(false);
+  const [eyesight, setEyesight] = useState('');
+  const [hearing, setHearing] = useState('');
+  const [mobilityAids, setMobilityAids] = useState('');
+  const [prosthesis, setProsthesis] = useState('');
+  const [otherAccessibility, setOtherAccessibility] = useState('');
+
+  const [assistShowerBath, setAssistShowerBath] = useState(false);
+  const [assistDressing, setAssistDressing] = useState(false);
+  const [assistToileting, setAssistToileting] = useState(false);
+  const [assistEating, setAssistEating] = useState(false);
+
+  const [coughOver2Weeks, setCoughOver2Weeks] = useState(false);
+  const [unexplainedWeightLoss, setUnexplainedWeightLoss] = useState(false);
+  const [nightSweatsOrFevers, setNightSweatsOrFevers] = useState(false);
+
+  const [onMedication, setOnMedication] = useState<'yes' | 'no' | ''>('');
+  const [medicationHandedIn, setMedicationHandedIn] = useState<'yes' | 'no' | ''>('');
+  const [medicationHandedInDate, setMedicationHandedInDate] = useState('');
+  const [currentMedications, setCurrentMedications] = useState(['', '', '', '', '']);
+
+  const [physicalCondition, setPhysicalCondition] = useState('');
+  const [dietaryRequirements, setDietaryRequirements] = useState('');
+  const [additionalInfo, setAdditionalInfo] = useState('');
+
+  const [medicalPersonName, setMedicalPersonName] = useState(user?.username ?? '');
+  const [medicalPersonSignature, setMedicalPersonSignature] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const updateRow = (id: string, field: keyof MedicationRow, value: string | boolean) => {
-    setMedications((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
-  };
-
-  const addRow = () => setMedications((rows) => [...rows, emptyRow()]);
-
-  const removeRow = (id: string) => {
-    setMedications((rows) => (rows.length > 1 ? rows.filter((r) => r.id !== id) : rows));
+  const updateMedication = (i: number, value: string) => {
+    setCurrentMedications((meds) => meds.map((m, idx) => (idx === i ? value : m)));
   };
 
   const validate = (): boolean => {
     const next: Record<string, string> = {};
-
-    medications.forEach((row, i) => {
-      const hasAnyValue = row.name || row.dosage || row.route || row.frequency;
-      if (hasAnyValue && (!row.name || !row.dosage || !row.route || !row.frequency)) {
-        next[`med-${i}`] = 'Complete every field in this row, or remove it.';
-      }
-    });
-
-    if (!temperature.trim()) next.temperature = 'Required.';
-    if (!bloodPressure.trim()) next.bloodPressure = 'Required.';
-    if (!pulse.trim()) next.pulse = 'Required.';
-    if (!respiratoryRate.trim()) next.respiratoryRate = 'Required.';
-    if (!clinicianName.trim()) next.clinicianName = 'Sign-off name is required before saving.';
-    if (!confirmed) next.confirmed = 'You must confirm this assessment before saving.';
-
+    if (!medicalPersonName.trim()) next.medicalPersonName = 'Required.';
+    if (!medicalPersonSignature) next.medicalPersonSignature = 'Signature required before this record can be saved.';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -120,20 +102,25 @@ export default function MedicationCheckIn({ patient, onSaved, onCancel }: Medica
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-
     setSaving(true);
-    const payload: SavePayload = {
-      patientId: patient.id,
-      medications: medications.filter((r) => r.name.trim()),
-      vitals: { temperature, bloodPressure, pulse, respiratoryRate },
-      generalAppearance,
-      newSymptoms,
-      clinicianName,
-      clinicianUserId: user?.userId,
-    };
 
     try {
-      await apiService.request('medication:save-checkin', payload);
+      await apiService.request('medication:save-checkin', {
+        patientId: patient.id,
+        accessibility: { eyesight, hearing, mobilityAids, prosthesis, other: otherAccessibility },
+        dailyLivingAssistance: { assistShowerBath, assistDressing, assistToileting, assistEating },
+        tbScreening: { coughOver2Weeks, unexplainedWeightLoss, nightSweatsOrFevers },
+        onMedication,
+        medicationHandedIn,
+        medicationHandedInDate,
+        currentMedications: currentMedications.filter((m) => m.trim()),
+        physicalCondition,
+        dietaryRequirements,
+        additionalInfo,
+        medicalPersonName,
+        medicalPersonSignature,
+        signedAt: new Date().toISOString(),
+      });
       await apiService.request('audit:log-event', {
         userId: user?.userId,
         action: 'MEDICATION_CHECKIN_SAVED',
@@ -147,181 +134,137 @@ export default function MedicationCheckIn({ patient, onSaved, onCancel }: Medica
     }
   };
 
-  // Once saved, the record becomes permanent and view-only (per FR-03) —
-  // no more editing, just a confirmation state.
   if (saved) {
     return (
-      <div className="mx-auto max-w-3xl rounded border border-confirm-500 bg-confirm-50 p-6 text-center">
+      <div className="mx-auto max-w-2xl rounded border border-confirm-500 bg-confirm-50 p-6 text-center">
         <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-confirm-600" aria-hidden="true" />
         <p className="font-semibold text-confirm-600">Medication check-in saved</p>
-        <p className="mt-1 text-sm text-slate-700">
-          This record is now permanent and view-only. The save was logged to the audit trail.
-        </p>
+        <p className="mt-1 text-sm text-slate-700">This record is now permanent and view-only.</p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSave} className="mx-auto max-w-3xl space-y-4 pb-12">
+    <form onSubmit={handleSave} className="mx-auto max-w-2xl space-y-4 pb-12">
       <AllergyAlertBanner allergies={patient.allergies} diagnosis={patient.diagnosis} />
 
-      <h1 className="text-lg font-semibold text-ink">Camper Medication Check-In and Assessment</h1>
+      <div>
+        <h1 className="text-lg font-semibold text-ink">Camper Medication Check-In and Assessment</h1>
+        <p className="font-mono text-xs text-slate-500">{patient.name} &middot; {patient.dateOfBirth ?? 'DOB not on file'}</p>
+      </div>
 
-      {/* Section 1: patient details, auto-populated */}
       <section className="rounded border border-slate-100 bg-white shadow-card">
-        <header className="flex items-baseline gap-3 border-b border-slate-100 px-5 py-3">
-          <span className="font-mono text-sm font-semibold text-clinical-500">01</span>
-          <h2 className="text-sm font-semibold text-ink">Patient details</h2>
+        <header className="border-b border-slate-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-ink">Accessibility</h2>
         </header>
-        <div className="grid grid-cols-2 gap-4 p-5 text-sm">
+        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
           <div>
-            <p className="text-xs font-medium text-slate-500">Full name</p>
-            <p className="text-ink">{patient.name}</p>
+            <label className="mb-1 block text-sm font-medium text-ink">Eyesight</label>
+            <input value={eyesight} onChange={(e) => setEyesight(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
           <div>
-            <p className="text-xs font-medium text-slate-500">Date of birth</p>
-            <p className="text-ink">{patient.dateOfBirth ?? 'Not on file'}</p>
+            <label className="mb-1 block text-sm font-medium text-ink">Hearing</label>
+            <input value={hearing} onChange={(e) => setHearing(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
-          <div className="col-span-2">
-            <p className="text-xs font-medium text-slate-500">Primary diagnosis</p>
-            <p className="text-ink">{patient.diagnosis}</p>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink">Mobility aids</label>
+            <input value={mobilityAids} onChange={(e) => setMobilityAids(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink">Prosthesis</label>
+            <input value={prosthesis} onChange={(e) => setProsthesis(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm font-medium text-ink">Other</label>
+            <input value={otherAccessibility} onChange={(e) => setOtherAccessibility(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
         </div>
       </section>
 
-      {/* Section 2: medication table */}
       <section className="rounded border border-slate-100 bg-white shadow-card">
-        <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <div className="flex items-baseline gap-3">
-            <span className="font-mono text-sm font-semibold text-clinical-500">02</span>
-            <h2 className="text-sm font-semibold text-ink">Medication table</h2>
-          </div>
-          <button
-            type="button"
-            onClick={addRow}
-            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-clinical-600 hover:bg-clinical-50"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            Add medication
-          </button>
+        <header className="border-b border-slate-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-ink">Assistance with daily living &amp; TB screening</h2>
         </header>
-        <div className="space-y-3 p-5">
-          {medications.map((row, i) => (
-            <div key={row.id} className="rounded border border-slate-100 p-3">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <input
-                  value={row.name}
-                  onChange={(e) => updateRow(row.id, 'name', e.target.value)}
-                  placeholder="Medication name"
-                  aria-label="Medication name"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm sm:col-span-2"
-                />
-                <input
-                  value={row.dosage}
-                  onChange={(e) => updateRow(row.id, 'dosage', e.target.value)}
-                  placeholder="Dosage"
-                  aria-label="Dosage"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                />
-                <input
-                  value={row.route}
-                  onChange={(e) => updateRow(row.id, 'route', e.target.value)}
-                  placeholder="Route (oral, topical…)"
-                  aria-label="Route"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                />
-                <input
-                  value={row.frequency}
-                  onChange={(e) => updateRow(row.id, 'frequency', e.target.value)}
-                  placeholder="Frequency / time"
-                  aria-label="Frequency or time"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                />
+        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
+          <Checkbox label="Shower/bath" checked={assistShowerBath} onChange={setAssistShowerBath} />
+          <Checkbox label="Dressing" checked={assistDressing} onChange={setAssistDressing} />
+          <Checkbox label="Toileting" checked={assistToileting} onChange={setAssistToileting} />
+          <Checkbox label="Eating" checked={assistEating} onChange={setAssistEating} />
+        </div>
+        <div className="space-y-1.5 border-t border-slate-100 p-5">
+          <Checkbox label="Cough lasting longer than 2 weeks" checked={coughOver2Weeks} onChange={setCoughOver2Weeks} />
+          <Checkbox label="Unexplained weight loss" checked={unexplainedWeightLoss} onChange={setUnexplainedWeightLoss} />
+          <Checkbox label="Night sweats or unexplained fevers" checked={nightSweatsOrFevers} onChange={setNightSweatsOrFevers} />
+        </div>
+      </section>
+
+      <section className="rounded border border-slate-100 bg-white shadow-card">
+        <header className="border-b border-slate-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-ink">Medication</h2>
+        </header>
+        <div className="space-y-4 p-5">
+          <div className="flex flex-wrap gap-6">
+            <div>
+              <p className="mb-1 text-sm font-medium text-ink">On medication?</p>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-1.5 text-sm"><input type="radio" name="onMed" checked={onMedication === 'yes'} onChange={() => setOnMedication('yes')} /> Yes</label>
+                <label className="flex items-center gap-1.5 text-sm"><input type="radio" name="onMed" checked={onMedication === 'no'} onChange={() => setOnMedication('no')} /> No</label>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <input
-                  value={row.lastDoseTaken}
-                  onChange={(e) => updateRow(row.id, 'lastDoseTaken', e.target.value)}
-                  placeholder="Last dose taken (optional)"
-                  aria-label="Last dose taken"
-                  className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
-                />
-                <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={row.verified}
-                    onChange={(e) => updateRow(row.id, 'verified', e.target.checked)}
-                  />
-                  Verified
-                </label>
-                {medications.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeRow(row.id)}
-                    aria-label="Remove this medication row"
-                    className="text-slate-500 hover:text-alert-600"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                )}
-              </div>
-              {errors[`med-${i}`] && (
-                <p className="mt-1 text-xs font-medium text-alert-600">{errors[`med-${i}`]}</p>
-              )}
             </div>
-          ))}
+            <div>
+              <p className="mb-1 text-sm font-medium text-ink">Medication handed in?</p>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-sm"><input type="radio" name="handedIn" checked={medicationHandedIn === 'yes'} onChange={() => setMedicationHandedIn('yes')} /> Yes</label>
+                <label className="flex items-center gap-1.5 text-sm"><input type="radio" name="handedIn" checked={medicationHandedIn === 'no'} onChange={() => setMedicationHandedIn('no')} /> No</label>
+                <input type="date" value={medicationHandedInDate} onChange={(e) => setMedicationHandedInDate(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-ink">Current medication (list)</p>
+            <div className="space-y-2">
+              {currentMedications.map((med, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-4 text-xs text-slate-500">{i + 1}</span>
+                  <input value={med} onChange={(e) => updateMedication(i, e.target.value)} className="flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm" />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Section 3: initial physical assessment */}
       <section className="rounded border border-slate-100 bg-white shadow-card">
-        <header className="flex items-baseline gap-3 border-b border-slate-100 px-5 py-3">
-          <span className="font-mono text-sm font-semibold text-clinical-500">03</span>
-          <h2 className="text-sm font-semibold text-ink">Initial physical assessment</h2>
+        <header className="border-b border-slate-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-ink">Additional information</h2>
         </header>
-        <div className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-4">
-          <FieldInput label="Temperature" required value={temperature} onChange={setTemperature} error={errors.temperature} />
-          <FieldInput label="Blood pressure" required value={bloodPressure} onChange={setBloodPressure} error={errors.bloodPressure} />
-          <FieldInput label="Pulse" required value={pulse} onChange={setPulse} error={errors.pulse} />
-          <FieldInput label="Respiratory rate" required value={respiratoryRate} onChange={setRespiratoryRate} error={errors.respiratoryRate} />
-          <div className="col-span-2 sm:col-span-4">
-            <label className="mb-1 block text-sm font-medium text-ink">General appearance</label>
-            <textarea
-              value={generalAppearance}
-              onChange={(e) => setGeneralAppearance(e.target.value)}
-              rows={2}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
+        <div className="space-y-4 p-5">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink">Current physical condition</label>
+            <textarea value={physicalCondition} onChange={(e) => setPhysicalCondition(e.target.value)} rows={2} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
-          <div className="col-span-2 sm:col-span-4">
-            <label className="mb-1 block text-sm font-medium text-ink">New symptoms</label>
-            <textarea
-              value={newSymptoms}
-              onChange={(e) => setNewSymptoms(e.target.value)}
-              rows={2}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink">Dietary requirements</label>
+            <input value={dietaryRequirements} onChange={(e) => setDietaryRequirements(e.target.value)} placeholder="Diabetic, halaal, vegetarian…" className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink">Additional camper info (behavioral, psychosocial, self-care needs)</label>
+            <textarea value={additionalInfo} onChange={(e) => setAdditionalInfo(e.target.value)} rows={2} className="w-full rounded border border-slate-300 px-3 py-2 text-sm" />
           </div>
         </div>
       </section>
 
-      {/* Section 4: mandatory clinician sign-off */}
       <section className="rounded border-2 border-clinical-500 bg-white shadow-card">
         <header className="border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-ink">Clinician sign-off (required)</h2>
+          <h2 className="text-sm font-semibold text-ink">Medical person sign-off (required)</h2>
         </header>
-        <div className="space-y-3 p-5">
-          <FieldInput label="Clinician name" required value={clinicianName} onChange={setClinicianName} error={errors.clinicianName} />
-          <label className="flex items-start gap-2 text-sm text-ink">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(e) => setConfirmed(e.target.checked)}
-              className="mt-0.5"
-            />
-            I confirm this assessment is accurate and complete to the best of my knowledge.
-          </label>
-          {errors.confirmed && <p className="text-xs font-medium text-alert-600">{errors.confirmed}</p>}
+        <div className="space-y-4 p-5">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink">Medical person name<span className="ml-0.5 text-alert-500">*</span></label>
+            <input value={medicalPersonName} onChange={(e) => setMedicalPersonName(e.target.value)} className={`w-full rounded border px-3 py-2 text-sm ${errors.medicalPersonName ? 'border-alert-500' : 'border-slate-300'}`} />
+            {errors.medicalPersonName && <p className="mt-1 text-xs font-medium text-alert-600">{errors.medicalPersonName}</p>}
+          </div>
+          <SignaturePad label="Medical person signature" onChange={setMedicalPersonSignature} error={errors.medicalPersonSignature} />
         </div>
       </section>
 
@@ -329,51 +272,14 @@ export default function MedicationCheckIn({ patient, onSaved, onCancel }: Medica
 
       <div className="flex justify-end gap-3">
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
+          <button type="button" onClick={onCancel} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Cancel
           </button>
         )}
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded bg-clinical-500 px-5 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50"
-        >
+        <button type="submit" disabled={saving} className="rounded bg-clinical-500 px-5 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50">
           {saving ? 'Saving…' : 'Save check-in'}
         </button>
       </div>
     </form>
-  );
-}
-
-function FieldInput({
-  label,
-  required,
-  value,
-  onChange,
-  error,
-}: {
-  label: string;
-  required?: boolean;
-  value: string;
-  onChange: (v: string) => void;
-  error?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-ink">
-        {label}
-        {required && <span className="ml-0.5 text-alert-500">*</span>}
-      </label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded border px-3 py-2 text-sm ${error ? 'border-alert-500' : 'border-slate-300'}`}
-      />
-      {error && <p className="mt-1 text-xs font-medium text-alert-600">{error}</p>}
-    </div>
   );
 }

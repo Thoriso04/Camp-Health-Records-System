@@ -49,6 +49,26 @@ module.exports = {
           700: '#5C584F',
           DEFAULT: '#8A857D',
         },
+        // Sampled directly from the real Camp Footprints logo
+        // (Camper Registration and Indemnity forms.pdf, page 1).
+        // Used for brand moments (header, primary actions) — NOT for
+        // safety-critical states. alert/confirm/amber stay as they are
+        // regardless of brand, since those carry clinical meaning that
+        // must never be reinterpreted for aesthetics.
+        footprints: {
+          50: '#F3EFEA',
+          100: '#E6DCD0',
+          400: '#A8947C',
+          600: '#6D6250',
+          700: '#4F4739',
+          DEFAULT: '#6D6250',
+        },
+        lime: {
+          50: '#F4F9DE',
+          400: '#AFCB05',
+          600: '#6B7A03',
+          DEFAULT: '#AFCB05',
+        },
       },
       fontFamily: {
         sans: ['"Work Sans"', 'system-ui', '-apple-system', 'sans-serif'],
