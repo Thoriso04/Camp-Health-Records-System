@@ -1,16 +1,31 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const crypto = require('crypto');
 require('dotenv').config();
 
-let mainWindow;
+// Imports from new folder structure
+const { openEncryptedDatabase } = require('./database/database');
+const { insertPatient, logAuditEvent } = require('./services/dbController');
+const { verifyPassword } = require('./services/authService');
+const { exportOfflineBackup } = require('./services/syncService');
+const { handleIpcSafely } = require('./utils/errorHandler');
 
-// Access environment variables loaded from .env
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_fallback_secret';
+let mainWindow;
+let dbInstance = null;
+
 const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'dev_db_passphrase';
 
-// Cryptographic key buffer check
-const keyBuffer = Buffer.from(DB_ENCRYPTION_KEY, 'utf-8');
+function initDatabase() {
+  try {
+    const dbPath = path.join(app.getPath('userData'), 'chrs.db');
+    console.log(`[Backend DB] Initializing SQLCipher connection at: ${dbPath}`);
+    dbInstance = openEncryptedDatabase(dbPath, DB_ENCRYPTION_KEY);
+    console.log('[Backend DB] Encrypted database initialized.');
+  } catch (error) {
+    console.error('[Backend DB] Database initialization failed:', error.message);
+  }
+}
+
+const getDb = () => dbInstance;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -34,6 +49,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initDatabase();
   createWindow();
 
   app.on('activate', () => {
@@ -46,7 +62,7 @@ app.on('window-all-closed', () => {
 });
 
 // ============================================================================
-// BACKEND IPC HANDLERS & DATABASE INIT
+// SAFE IPC HANDLERS
 // ============================================================================
 
 /**
@@ -61,27 +77,18 @@ function initDatabase() {
 initDatabase();
 
 // 1. Authentication Endpoint
-// TEST_ACCOUNTS lets you log in as any of the 4 roles during dev.
-// Test password for all: password123
-const TEST_ACCOUNTS = {
-  admin: { userId: 'usr-admin-01', role: 'Admin' },
-  physician: { userId: 'usr-physician-01', role: 'Physician' },
-  nurse: { userId: 'usr-nurse-01', role: 'Nurse' },
-  counselor: { userId: 'usr-counselor-01', role: 'Counselor' },
-};
-
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
 
   // TODO: Query SQLCipher DB for hashed password and compare using bcrypt
-  const account = TEST_ACCOUNTS[username];
-  if (account && password === 'password123') {
+  if (username === 'admin' && password === 'password123') {
+    // Basic JWT payload token generator
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(
       JSON.stringify({
-        userId: account.userId,
-        username,
-        role: account.role,
+        userId: 'usr-admin-01',
+        username: 'admin',
+        role: 'Admin',
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 hours
       })
     ).toString('base64url');
@@ -96,14 +103,14 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
     return {
       success: true,
       token: jwtToken,
-      user: { userId: account.userId, username, role: account.role },
+      user: { userId: 'usr-admin-01', username: 'admin', role: 'Admin' },
     };
   }
 
   return { success: false, message: 'Invalid credentials' };
 });
 
-// 2. Tamper-Evident Audit Logging
+// 2. Tamper-Evident Audit Logging 
 ipcMain.handle('audit:log-event', async (event, logData) => {
   const timestamp = new Date().toISOString();
   const entryHash = crypto
@@ -117,16 +124,13 @@ ipcMain.handle('audit:log-event', async (event, logData) => {
   return { success: true, hash: entryHash };
 });
 
-// 3. Clinical Records Queries
+// 3. Clinical Records Queries 
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
-
+  
   // TODO: SELECT * FROM campers WHERE camper_id = patientId
   return {
-    id: patientId,
-    name: 'Alex Johnson',
-    allergies: ['Penicillin', 'Peanuts'],
-    diagnosis: 'Asthma',
-    medicalNotes: 'Keep inhaler accessible at all times.',
+    success: true,
+    user: { userId: user.id, username: user.username, role: user.role, fullName: user.full_name },
   };
 });
