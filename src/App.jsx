@@ -51,11 +51,14 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper font-sans">
-      <div className="w-full max-w-sm rounded border border-slate-100 bg-white p-6 shadow-card">
+      <div className="w-full max-w-sm overflow-hidden rounded border border-slate-100 bg-white shadow-card">
+        <div className="h-1.5 bg-lime-400" />
+        <div className="p-6">
         <h1 className="text-lg font-semibold text-ink">Camp Health Records System</h1>
-        <p className="mb-6 mt-1 text-xs text-slate-500">
+        <p className="mb-1 mt-1 text-xs text-slate-500">
           CHRS offline desktop app &mdash; encrypted SQLite layer
         </p>
+        <p className="mb-6 text-xs font-medium text-footprints-600">Camp Footprints</p>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
@@ -94,11 +97,12 @@ export default function App() {
 
           <button
             type="submit"
-            className="w-full rounded bg-clinical-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-clinical-600"
+            className="w-full rounded bg-footprints-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-footprints-700"
           >
             Sign in
           </button>
         </form>
+        </div>
       </div>
     </div>
   );
