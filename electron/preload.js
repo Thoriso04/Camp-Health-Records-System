@@ -9,11 +9,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   invoke: (channel, data) => {
     const validChannels = [
+      // Auth
       'auth:login',
+      'auth:register',
+      // Users (approval workflow)
+      'user:list-pending',
+      'user:approve',
+      // Patients
       'patient:get-by-id',
-      'patient:save-record',
+      'patient:create',
+      'patient:import-csv',
+      // Clinical forms
+      'medication:save-checkin',
+      'medshack:save-visit',
+      'incident:save-report',
+      'staff:save-checkin',
+      // Audit
       'audit:log-event',
-      'backup:export'
+      'audit:get-entries',
+      // Backup
+      'backup:list-drives',
+      'backup:start',
     ];
     if (validChannels.includes(channel)) {
       return ipcRenderer.invoke(channel, data);

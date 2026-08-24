@@ -4,14 +4,13 @@ import { useState } from 'react';
 import MedicalDashboard from './components/MedicalDashboard';
 import { LockScreenModal } from './components/LockScreenModal';
 import { useInactivityTimer } from './hooks/useInactivityTimer';
+import RegisterUser from './components/RegisterUser';
 
-// FR-01: "The system must lock the user session after 10 minutes of
-// inactivity." Session-lock timeout, not the JWT expiry — those are two
-// different things and shouldn't be confused.
 const SESSION_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
 export default function App() {
   const { login, isAuthenticated } = useAuth();
+  const [view, setView] = useState('login'); // 'login' | 'register'
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -49,59 +48,68 @@ export default function App() {
     );
   }
 
+  if (view === 'register') {
+    return <RegisterUser onBackToLogin={() => setView('login')} />;
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper font-sans">
       <div className="w-full max-w-sm overflow-hidden rounded border border-slate-100 bg-white shadow-card">
         <div className="h-1.5 bg-lime-400" />
         <div className="p-6">
-        <h1 className="text-lg font-semibold text-ink">Camp Health Records System</h1>
-        <p className="mb-1 mt-1 text-xs text-slate-500">
-          CHRS offline desktop app &mdash; encrypted SQLite layer
-        </p>
-        <p className="mb-6 text-xs font-medium text-footprints-600">Camp Footprints</p>
+          <h1 className="text-lg font-semibold text-ink">Camp Health Records System</h1>
+          <p className="mb-1 mt-1 text-xs text-slate-500">
+            CHRS offline desktop app &mdash; encrypted SQLite layer
+          </p>
+          <p className="mb-6 text-xs font-medium text-footprints-600">Camp Footprints</p>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink" htmlFor="username">
-              Username
-            </label>
-            <input
-              id="username"
-              type="text"
-              value={usernameInput}
-              onChange={(e) => setUsernameInput(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="admin"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink" htmlFor="password">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="password123"
-            />
-          </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink" htmlFor="username">
+                Username
+              </label>
+              <input
+                id="username"
+                type="text"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink" htmlFor="password">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
 
-          {loginError && (
-            <p className="text-xs font-medium text-alert-600" role="alert">
-              {loginError}
-            </p>
-          )}
+            {loginError && (
+              <p className="text-xs font-medium text-alert-600" role="alert">
+                {loginError}
+              </p>
+            )}
 
-          <button
-            type="submit"
-            className="w-full rounded bg-footprints-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-footprints-700"
-          >
-            Sign in
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="w-full rounded bg-footprints-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-footprints-700"
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('register')}
+              className="w-full text-xs font-medium text-clinical-600 hover:underline"
+            >
+              New here? Register
+            </button>
+          </form>
         </div>
       </div>
     </div>

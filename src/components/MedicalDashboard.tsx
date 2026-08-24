@@ -13,6 +13,7 @@ import NewPatientProfile from './NewPatientProfile';
 import AuditLogViewer from './AuditLogViewer';
 import CsvImport from './CsvImport';
 import UsbBackup from './UsbBackup';
+import PendingUsersApproval from './PendingUsersApproval';
 
 interface PatientRecord {
   id: string;
@@ -266,6 +267,10 @@ export default function MedicalDashboard() {
 
             <ProtectedView requiredPermission="IMPORT_CSV">
               <CsvImport />
+            </ProtectedView>
+
+            <ProtectedView requiredPermission="MANAGE_USERS">
+              <PendingUsersApproval />
             </ProtectedView>
 
             <ProtectedView requiredPermission="MANAGE_BACKUP">
