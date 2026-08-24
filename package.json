@@ -35,7 +35,10 @@
   "description": "",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "npm start",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .",
+    "dev": "concurrently \"npm:dev:vite\" \"npm:dev:electron\"",
+    "build": "vite build",
     "start": "electron ."
   },
   "keywords": [],
@@ -43,24 +46,29 @@
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^13.0.3",
     "better-sqlite3-multiple-ciphers": "^13.0.3",
     "dotenv": "^17.4.2",
     "electron": "^43.3.0",
-    "lucide-react": "^1.31.0"
+    "lucide-react": "^1.34.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "jest": "^30.4.2",
     "playwright": "^1.62.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^6.0.7",
+    "wait-on": "^8.0.1"
   },
   "overrides": {
     "tar": "^7.5.21"
