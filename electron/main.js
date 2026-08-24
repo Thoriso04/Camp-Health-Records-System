@@ -61,18 +61,27 @@ function initDatabase() {
 initDatabase();
 
 // 1. Authentication Endpoint
+// TEST_ACCOUNTS lets you log in as any of the 4 roles during dev.
+// Test password for all: password123
+const TEST_ACCOUNTS = {
+  admin: { userId: 'usr-admin-01', role: 'Admin' },
+  physician: { userId: 'usr-physician-01', role: 'Physician' },
+  nurse: { userId: 'usr-nurse-01', role: 'Nurse' },
+  counselor: { userId: 'usr-counselor-01', role: 'Counselor' },
+};
+
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
 
   // TODO: Query SQLCipher DB for hashed password and compare using bcrypt
-  if (username === 'admin' && password === 'password123') {
-    // Basic JWT payload token generator
+  const account = TEST_ACCOUNTS[username];
+  if (account && password === 'password123') {
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(
       JSON.stringify({
-        userId: 'usr-admin-01',
-        username: 'admin',
-        role: 'Admin',
+        userId: account.userId,
+        username,
+        role: account.role,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 hours
       })
     ).toString('base64url');
@@ -87,14 +96,14 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
     return {
       success: true,
       token: jwtToken,
-      user: { userId: 'usr-admin-01', username: 'admin', role: 'Admin' },
+      user: { userId: account.userId, username, role: account.role },
     };
   }
 
   return { success: false, message: 'Invalid credentials' };
 });
 
-// 2. Tamper-Evident Audit Logging 
+// 2. Tamper-Evident Audit Logging
 ipcMain.handle('audit:log-event', async (event, logData) => {
   const timestamp = new Date().toISOString();
   const entryHash = crypto
@@ -108,10 +117,10 @@ ipcMain.handle('audit:log-event', async (event, logData) => {
   return { success: true, hash: entryHash };
 });
 
-// 3. Clinical Records Queries 
+// 3. Clinical Records Queries
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
-  
+
   // TODO: SELECT * FROM campers WHERE camper_id = patientId
   return {
     id: patientId,

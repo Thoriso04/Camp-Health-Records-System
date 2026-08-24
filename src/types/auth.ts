@@ -5,7 +5,9 @@ export type Permission =
   | 'EDIT_CLINICAL_RECORDS'
   | 'MANAGE_USERS'
   | 'IMPORT_CSV'
-  | 'VIEW_AUDIT_LOGS';
+  | 'VIEW_AUDIT_LOGS'
+  | 'FILE_INCIDENT_REPORT'
+  | 'MANAGE_BACKUP';
 
 export interface UserSession {
   userId: string;

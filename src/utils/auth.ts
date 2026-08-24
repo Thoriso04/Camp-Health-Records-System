@@ -1,17 +1,28 @@
 import type { Role } from '../types/auth';
 
-declare const require: any;
-let jwtDecode: any;
-try {
-  const jwtDecodeModule = typeof require === 'function' ? require('jwt-decode') : undefined;
-  jwtDecode = jwtDecodeModule?.jwtDecode || jwtDecodeModule;
-  if (!jwtDecode) throw new Error('jwt-decode not available');
-} catch {
-  jwtDecode = (token: string) => {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(Buffer.from(base64, 'base64').toString());
-  };
+/**
+ * FIX: the previous version tried require('jwt-decode') first, then
+ * fell back to Node's Buffer if that failed. Neither works in an
+ * Electron renderer with nodeIntegration: false / contextIsolation:
+ * true (correctly set in main.js) — there is no `require` and no
+ * `Buffer` global in that context. Both attempts were throwing, and
+ * because getDecodedToken() catches everything silently, login was
+ * failing with zero visible error: the backend would report success,
+ * but the token could never be decoded, so `user` stayed null forever.
+ *
+ * atob() is a standard browser global, always available in the
+ * renderer, so this doesn't need any Node API or extra package.
+ */
+function decodeJwt(token: string): DecodedToken {
+  const base64Url = token.split('.')[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonPayload = decodeURIComponent(
+    atob(base64)
+      .split('')
+      .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+      .join('')
+  );
+  return JSON.parse(jsonPayload);
 }
 
 export interface DecodedToken {
@@ -37,7 +48,7 @@ export const getDecodedToken = (): DecodedToken | null => {
   const token = getAuthToken();
   if (!token) return null;
   try {
-    return jwtDecode(token);
+    return decodeJwt(token);
   } catch {
     return null;
   }
