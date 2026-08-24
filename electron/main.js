@@ -71,13 +71,22 @@ app.on('window-all-closed', () => {
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
 
-  if (username === 'admin' && password === 'password123') {
+  const roleByUsername = {
+    admin: 'Admin',
+    nurse: 'Nurse',
+    physician: 'Physician',
+    counselor: 'Counselor',
+  };
+  const role = roleByUsername[username?.toLowerCase()];
+
+  if (role && password === 'password123') {
+    const userId = `usr-${username.toLowerCase()}-01`;
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(
       JSON.stringify({
-        userId: 'usr-admin-01',
-        username: 'admin',
-        role: 'Admin',
+        userId,
+        username: username.toLowerCase(),
+        role,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 hours
       })
     ).toString('base64url');
@@ -92,7 +101,7 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
     return {
       success: true,
       token: jwtToken,
-      user: { userId: 'usr-admin-01', username: 'admin', role: 'Admin' },
+      user: { userId, username: username.toLowerCase(), role },
     };
   }
 
