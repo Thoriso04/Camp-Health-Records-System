@@ -1,4 +1,4 @@
-
+import type { Role } from '../types/auth';
 
 declare const require: any;
 let jwtDecode: any;
@@ -17,7 +17,7 @@ try {
 export interface DecodedToken {
   userId: string;
   username: string;
-  role: string;
+  role: Role;
   exp: number;
 }
 
