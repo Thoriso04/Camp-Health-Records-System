@@ -1,3 +1,20 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* Note: CHRS is offline-first. Before shipping, self-host these two font
+   files (e.g. in /public/fonts) instead of loading from Google Fonts,
+   so typography doesn't depend on network access. */
+
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@layer base {
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+  }
+
+  /* Visible keyboard focus everywhere — required per FSD Section 7.1
+     (UI must be keyboard-only navigable via Tab/Enter/Arrow keys) */
+  :focus-visible {
+    @apply outline-none ring-2 ring-clinical-500 ring-offset-2 ring-offset-paper;
+  }
+}

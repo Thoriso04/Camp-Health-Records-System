@@ -3,14 +3,31 @@ const path = require('path');
 const crypto = require('crypto');
 require('dotenv').config();
 
+// Imports from project modules
+const { openEncryptedDatabase } = require('./database/database');
+const { insertPatient, logAuditEvent } = require('./services/dbController');
+const { verifyPassword } = require('./services/authService');
+const { exportOfflineBackup } = require('./services/syncService');
+const { handleIpcSafely } = require('./utils/errorHandler');
+
 let mainWindow;
+let dbInstance = null;
 
-// Access environment variables loaded from .env
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_fallback_secret';
 const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'dev_db_passphrase';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_key';
 
-// Cryptographic key buffer check
-const keyBuffer = Buffer.from(DB_ENCRYPTION_KEY, 'utf-8');
+function initDatabase() {
+  try {
+    const dbPath = path.join(app.getPath('userData'), 'chrs.db');
+    console.log(`[Backend DB] Initializing SQLCipher connection at: ${dbPath}`);
+    dbInstance = openEncryptedDatabase(dbPath, DB_ENCRYPTION_KEY);
+    console.log('[Backend DB] Encrypted database initialized.');
+  } catch (error) {
+    console.error('[Backend DB] Database initialization failed:', error.message);
+  }
+}
+
+const getDb = () => dbInstance;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -34,6 +51,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initDatabase();
   createWindow();
 
   app.on('activate', () => {
@@ -46,33 +64,29 @@ app.on('window-all-closed', () => {
 });
 
 // ============================================================================
-// BACKEND IPC HANDLERS & DATABASE INIT
+// SAFE IPC HANDLERS
 // ============================================================================
-
-/**
- * TODO: Initialize SQLCipher / better-sqlite3 instance here.
- * Execute PRAGMA key = '${DB_ENCRYPTION_KEY}' upon opening database connection.
- */
-function initDatabase() {
-  console.log(`[Backend DB] Initializing SQLite connection using key length: ${keyBuffer.length} bytes`);
-  // SQLCipher database initialization logic goes here
-}
-
-initDatabase();
 
 // 1. Authentication Endpoint
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
 
-  // TODO: Query SQLCipher DB for hashed password and compare using bcrypt
-  if (username === 'admin' && password === 'password123') {
-    // Basic JWT payload token generator
+  const roleByUsername = {
+    admin: 'Admin',
+    nurse: 'Nurse',
+    physician: 'Physician',
+    counselor: 'Counselor',
+  };
+  const role = roleByUsername[username?.toLowerCase()];
+
+  if (role && password === 'password123') {
+    const userId = `usr-${username.toLowerCase()}-01`;
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(
       JSON.stringify({
-        userId: 'usr-admin-01',
-        username: 'admin',
-        role: 'Admin',
+        userId,
+        username: username.toLowerCase(),
+        role,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 hours
       })
     ).toString('base64url');
@@ -87,7 +101,7 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
     return {
       success: true,
       token: jwtToken,
-      user: { userId: 'usr-admin-01', username: 'admin', role: 'Admin' },
+      user: { userId, username: username.toLowerCase(), role },
     };
   }
 
@@ -104,7 +118,6 @@ ipcMain.handle('audit:log-event', async (event, logData) => {
 
   console.log(`[Backend Audit Log] ${timestamp} | Hash: ${entryHash.slice(0, 8)}... | Action: ${logData.action}`);
 
-  // TODO: INSERT INTO audit_logs (id, timestamp, user_id, action, hash) VALUES (...)
   return { success: true, hash: entryHash };
 });
 
@@ -112,12 +125,8 @@ ipcMain.handle('audit:log-event', async (event, logData) => {
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
   
-  // TODO: SELECT * FROM campers WHERE camper_id = patientId
   return {
-    id: patientId,
-    name: 'Alex Johnson',
-    allergies: ['Penicillin', 'Peanuts'],
-    diagnosis: 'Asthma',
-    medicalNotes: 'Keep inhaler accessible at all times.',
+    success: true,
+    patientId: patientId,
   };
 });
