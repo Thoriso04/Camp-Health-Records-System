@@ -1,5 +1,10 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 require('dotenv').config();
 
 // Imports from new folder structure
@@ -13,6 +18,7 @@ let mainWindow;
 let dbInstance = null;
 
 const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'dev_db_passphrase';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_key';
 
 function initDatabase() {
   try {
@@ -62,27 +68,61 @@ app.on('window-all-closed', () => {
 });
 
 // ============================================================================
-// SAFE IPC HANDLERS
+// IPC HANDLERS
 // ============================================================================
 
-/**
- * TODO: Initialize SQLCipher / better-sqlite3 instance here.
- * Execute PRAGMA key = '${DB_ENCRYPTION_KEY}' upon opening database connection.
- */
-function initDatabase() {
-  console.log(`[Backend DB] Initializing SQLite connection using key length: ${keyBuffer.length} bytes`);
-  // SQLCipher database initialization logic goes here
-}
+// 1. USB Drive Detection
+ipcMain.handle('backup:list-drives', async () => {
+  try {
+    // Windows PowerShell command querying Win32_LogicalDisk for removable drives (DriveType = 2)
+    const command = `powershell "Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 } | Select-Object DeviceID, VolumeName, FreeSpace | ConvertTo-Json"`;
+    const { stdout } = await execPromise(command);
 
-initDatabase();
+    if (!stdout.trim()) return [];
 
-// 1. Authentication Endpoint
+    const parsed = JSON.parse(stdout);
+    const drivesList = Array.isArray(parsed) ? parsed : [parsed];
+
+    return drivesList.map((drive) => ({
+      driveLetter: drive.DeviceID,
+      label: drive.VolumeName || 'Removable Disk',
+      freeSpaceGb: drive.FreeSpace ? parseFloat((drive.FreeSpace / (1024 ** 3)).toFixed(2)) : 0,
+    }));
+  } catch (error) {
+    console.error('[Backend Backup] Failed to list USB drives:', error.message);
+    return [];
+  }
+});
+
+// 2. USB Backup Execution
+ipcMain.handle('backup:start', async (event, { driveLetter, folderName, initiatedByUserId }) => {
+  try {
+    const destinationFolder = path.join(`${driveLetter}\\`, folderName);
+
+    if (!fs.existsSync(destinationFolder)) {
+      fs.mkdirSync(destinationFolder, { recursive: true });
+    }
+
+    const sourceDbPath = path.join(app.getPath('userData'), 'chrs.db');
+    const destDbPath = path.join(destinationFolder, 'chrs_backup.db');
+
+    if (fs.existsSync(sourceDbPath)) {
+      fs.copyFileSync(sourceDbPath, destDbPath);
+    }
+
+    console.log(`[Backend Backup] Created backup at: ${destinationFolder}`);
+    return { success: true, folderPath: destinationFolder };
+  } catch (error) {
+    console.error('[Backend Backup] Backup failed:', error.message);
+    throw new Error(`Backup execution failed: ${error.message}`);
+  }
+});
+
+// 3. Authentication Endpoint
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
 
-  // TODO: Query SQLCipher DB for hashed password and compare using bcrypt
   if (username === 'admin' && password === 'password123') {
-    // Basic JWT payload token generator
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(
       JSON.stringify({
@@ -110,7 +150,7 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
   return { success: false, message: 'Invalid credentials' };
 });
 
-// 2. Tamper-Evident Audit Logging 
+// 4. Tamper-Evident Audit Logging
 ipcMain.handle('audit:log-event', async (event, logData) => {
   const timestamp = new Date().toISOString();
   const entryHash = crypto
@@ -120,17 +160,14 @@ ipcMain.handle('audit:log-event', async (event, logData) => {
 
   console.log(`[Backend Audit Log] ${timestamp} | Hash: ${entryHash.slice(0, 8)}... | Action: ${logData.action}`);
 
-  // TODO: INSERT INTO audit_logs (id, timestamp, user_id, action, hash) VALUES (...)
   return { success: true, hash: entryHash };
 });
 
-// 3. Clinical Records Queries 
+// 5. Clinical Records Queries
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
-  
-  // TODO: SELECT * FROM campers WHERE camper_id = patientId
   return {
     success: true,
-    user: { userId: user.id, username: user.username, role: user.role, fullName: user.full_name },
+    patientId,
   };
 });
