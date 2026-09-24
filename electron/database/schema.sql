@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE INDEX IF NOT EXISTS idx_patients_name_dob
     ON patients (last_name, first_name, date_of_birth);
 
+-- Patient rows may only ever be soft-deleted (deleted_at set via an audited
+-- UPDATE, per FR-09) so that a before/after image always survives in
+-- audit_log. A hard DELETE would erase the row with no trail at all, so it
+-- is blocked outright at the DB layer, independent of what the app layer does.
+CREATE TRIGGER IF NOT EXISTS trg_patients_no_hard_delete
+BEFORE DELETE ON patients
+BEGIN
+    SELECT RAISE(ABORT, 'patients rows cannot be hard-deleted; set deleted_at instead so the audit trail is preserved');
+END;
+
 -- MEDICATIONS (FR-03) — master list of medications available at camp
 -- Header table + line-item table (one checkin can list several meds)
 
@@ -124,7 +134,18 @@ CREATE TABLE IF NOT EXISTS near_miss_patients (
 );
 
 -- AUDIT LOGS  (FR-09) — append-only, tamper-evident
-
+--
+-- Tamper-evidence is two layers deep:
+--   1. Write-once at the DB layer: trg_audit_no_update / trg_audit_no_delete
+--      below ABORT any UPDATE or DELETE against this table, full stop.
+--   2. Hash-chained rows: every insert (see electron/database/auditLog.js)
+--      carries prev_hash (the entry_hash of the row before it) and its own
+--      entry_hash = SHA-256(prev_hash || canonical row fields). Re-walking
+--      the chain (auditLog.verifyChain) recomputes every hash and confirms
+--      each prev_hash matches the prior row's entry_hash, so even an actor
+--      who bypasses layer 1 (e.g. temporarily dropping the triggers with
+--      direct file/DB access) cannot edit, delete, or splice a row without
+--      breaking the chain from that point forward.
 CREATE TABLE IF NOT EXISTS audit_log (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     event_time      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -137,11 +158,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
     before_image    TEXT,                        -- JSON snapshot, NULL for CREATE
     after_image     TEXT,                         -- JSON snapshot, NULL for DELETE
     view_duration_ms INTEGER,                     -- populated for READ events
-    details         TEXT
+    details         TEXT,
+    prev_hash       TEXT,                         -- entry_hash of the previous row; NULL only for row 1
+    entry_hash      TEXT NOT NULL                 -- SHA-256(prev_hash || canonical fields of this row)
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log (event_time);
 CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log (target_table, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log (user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log (action_type);
 
 -- Enforce immutability at the DB layer: block UPDATE and DELETE entirely.
 CREATE TRIGGER IF NOT EXISTS trg_audit_no_update
@@ -183,4 +208,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
-INSERT INTO schema_version (version) VALUES (1);
+INSERT INTO schema_version (version) VALUES (2);
+-- v2: audit_log hash-chaining columns (prev_hash, entry_hash) + trg_patients_no_hard_delete.
+-- No migration path is defined yet for upgrading a v1 database in place — this
+-- schema is only ever applied fresh (see database.js#applySchema).

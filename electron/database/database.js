@@ -50,7 +50,7 @@ function openEncryptedDatabase(dbFilePath, encryptionKey) {
     // 3) apply the key. This must all happen before any other statement
     // touches the database.
     db.pragma(`cipher = 'sqlcipher'`);
-    db.pragma('legacy = 0');                                  // current (non-legacy) defaults
+    db.pragma('legacy = 0');                                    // current (non-legacy) defaults
     db.pragma('kdf_iter = 256000');                           // PBKDF2 iteration count (OWASP-aligned minimum)
     db.pragma(`kdf_algorithm = ${HASH_ALGORITHM.SHA512}`);    // PBKDF2-HMAC-SHA512
     db.pragma(`hmac_algorithm = ${HASH_ALGORITHM.SHA512}`);   // per-page HMAC using SHA512
@@ -76,12 +76,26 @@ function openEncryptedDatabase(dbFilePath, encryptionKey) {
     return db;
 }
 
+/**
+ * Safely applies the initial schema only if the database is uninitialized.
+ *
+ * @param {import('better-sqlite3-multiple-ciphers').Database} db
+ */
 function applySchema(db) {
-    const schemaSql = fs.readFileSync(SCHEMA_PATH, 'utf8');
-    const applySchemaTxn = db.transaction(() => {
-        db.exec(schemaSql);
-    });
-    applySchemaTxn();
+    // Check if the database has already been initialized by checking schema_version
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'").get();
+
+    if (!tableExists) {
+        console.log('[Backend DB] New database detected. Applying schema...');
+        const schemaSql = fs.readFileSync(SCHEMA_PATH, 'utf8');
+        const applySchemaTxn = db.transaction(() => {
+            db.exec(schemaSql);
+        });
+        applySchemaTxn();
+        console.log('[Backend DB] Schema successfully applied.');
+    } else {
+        console.log('[Backend DB] Existing database detected. Skipping schema initialization.');
+    }
 }
 
 /**

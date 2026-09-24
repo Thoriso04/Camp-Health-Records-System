@@ -13,7 +13,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'patient:get-by-id',
       'patient:save-record',
       'audit:log-event',
-      'backup:export'
+      'audit:get-entries',
+      'audit:verify-chain',
+      'backup:list-drives',
+      'backup:start'
     ];
     if (validChannels.includes(channel)) {
       return ipcRenderer.invoke(channel, data);

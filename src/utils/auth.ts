@@ -53,3 +53,14 @@ export const getDecodedToken = (): DecodedToken | null => {
     return null;
   }
 };
+
+export const getCurrentUser = () => {
+  const decoded = getDecodedToken();
+  if (!decoded) return null;
+
+  return {
+    ...decoded,
+    // Normalize role string to handle capitalization mismatches
+    role: (decoded.role.charAt(0).toUpperCase() + decoded.role.slice(1).toLowerCase()) as Role,
+  };
+};

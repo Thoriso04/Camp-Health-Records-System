@@ -60,11 +60,12 @@ export default function MedicalDashboard() {
     <div className="min-h-screen bg-paper font-sans text-ink">
       {/* Top bar */}
       <header className="border-b border-slate-100 bg-white">
+        <div className="h-1 bg-lime-400" />
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div>
             <h1 className="text-lg font-semibold text-ink">Medical Dashboard</h1>
             <p className="font-mono text-xs text-slate-500">
-              {user?.username} &middot; Camp Footprints
+              {user?.username} &middot; <span className="text-footprints-600">Camp Footprints</span>
             </p>
           </div>
           <div className="flex items-center gap-3">
