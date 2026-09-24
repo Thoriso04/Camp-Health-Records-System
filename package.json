@@ -4,6 +4,7 @@
   "description": "Camp Health Records System",
   "main": "electron/main.js",
   "scripts": {
+    "test": "jest",
     "dev:vite": "vite",
     "dev:electron": "wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .",
     "dev": "concurrently \"npm:dev:vite\" \"npm:dev:electron\"",
@@ -69,4 +70,6 @@
   "overrides": {
     "tar": "^7.5.21"
   }
+  
+  
 }
