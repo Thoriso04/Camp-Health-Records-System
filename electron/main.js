@@ -5,7 +5,6 @@ const crypto = require('crypto');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
-const crypto = require('crypto');
 require('dotenv').config();
 
 // Imports from project modules
@@ -124,11 +123,6 @@ ipcMain.handle('backup:start', async (event, { driveLetter, folderName, initiate
   }
 });
 
-// 3. Authentication Endpoint
-ipcMain.handle('auth:login', async (event, { username, password }) => {
-  console.log(`[Backend Auth] Login attempt for user: ${username}`);
-
-  if (username === 'admin' && password === 'password123') {
 // 1. Authentication Endpoint
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
@@ -170,13 +164,6 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
   return { success: false, message: 'Invalid credentials' };
 });
 
-// 4. Tamper-Evident Audit Logging
-ipcMain.handle('audit:log-event', async (event, logData) => {
-  const timestamp = new Date().toISOString();
-  const entryHash = crypto
-    .createHash('sha256')
-    .update(`${timestamp}-${logData.userId}-${logData.action}`)
-    .digest('hex');
 // 2. Tamper-Evident Audit Logging
 //
 // Writes a real, hash-chained row to audit_log (see electron/database/auditLog.js)
@@ -212,7 +199,6 @@ handleIpcSafely(ipcMain, 'audit:get-entries', getDb, async (event, filters = {})
   return auditLog.getEntries(filters);
 });
 
-  return { success: true, hash: entryHash };
 // Walks the full hash chain and reports whether it's intact — surfaced in
 // the Audit Log Viewer as an integrity check the Physician can run anytime.
 handleIpcSafely(ipcMain, 'audit:verify-chain', getDb, async () => {
@@ -223,10 +209,6 @@ handleIpcSafely(ipcMain, 'audit:verify-chain', getDb, async () => {
 // 5. Clinical Records Queries
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
-  return {
-    success: true,
-    patientId,
-  
   return {
     success: true,
     patientId: patientId,
