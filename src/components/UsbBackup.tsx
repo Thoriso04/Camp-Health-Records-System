@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { HardDriveDownload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { HardDriveDownload, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,13 +10,6 @@ import { useAuth } from '../context/AuthContext';
  * USB drives, presents a list for selection, creates a backup folder
  * named CHRS_Backup_YYYYMMDD_HHMMSS, verifies with SHA-256, and shows
  * a clear error if it fails.
- *
- * NOTE: apiService.request('backup:list-drives', ...) and
- * apiService.request('backup:start', ...) do NOT exist in
- * electron/main.js yet. The tech spec says drive detection uses
- * Node's child_process wmic command — that's main-process-only code,
- * so this component can only ever call it through IPC, never do it
- * directly, which is correct given the sandboxed renderer.
  */
 
 interface UsbDrive {
@@ -98,7 +91,17 @@ export default function UsbBackup() {
         )}
 
         {drives && drives.length === 0 && (
-          <p className="text-sm text-slate-500">No USB drives detected. Connect a drive and try again.</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">No USB drives detected. Connect a drive and try again.</p>
+            <button
+              onClick={scanForDrives}
+              disabled={scanning}
+              className="inline-flex items-center gap-1.5 self-start rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${scanning ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {scanning ? 'Rescanning…' : 'Rescan'}
+            </button>
+          </div>
         )}
 
         {drives && drives.length > 0 && (
@@ -126,13 +129,25 @@ export default function UsbBackup() {
                 </label>
               ))}
             </div>
-            <button
-              onClick={startBackup}
-              disabled={!selectedDrive || backingUp}
-              className="rounded bg-clinical-500 px-4 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50"
-            >
-              {backingUp ? 'Backing up…' : 'Start backup'}
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={startBackup}
+                disabled={!selectedDrive || backingUp}
+                className="rounded bg-clinical-500 px-4 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50"
+              >
+                {backingUp ? 'Backing up…' : 'Start backup'}
+              </button>
+
+              <button
+                onClick={scanForDrives}
+                disabled={scanning || backingUp}
+                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${scanning ? 'animate-spin' : ''}`} aria-hidden="true" />
+                Refresh drives
+              </button>
+            </div>
           </div>
         )}
 

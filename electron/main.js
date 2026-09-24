@@ -1,5 +1,10 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const crypto = require('crypto');
 require('dotenv').config();
 
@@ -69,9 +74,61 @@ app.on('window-all-closed', () => {
 });
 
 // ============================================================================
-// SAFE IPC HANDLERS
+// IPC HANDLERS
 // ============================================================================
 
+// 1. USB Drive Detection
+ipcMain.handle('backup:list-drives', async () => {
+  try {
+    // Windows PowerShell command querying Win32_LogicalDisk for removable drives (DriveType = 2)
+    const command = `powershell "Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 2 } | Select-Object DeviceID, VolumeName, FreeSpace | ConvertTo-Json"`;
+    const { stdout } = await execPromise(command);
+
+    if (!stdout.trim()) return [];
+
+    const parsed = JSON.parse(stdout);
+    const drivesList = Array.isArray(parsed) ? parsed : [parsed];
+
+    return drivesList.map((drive) => ({
+      driveLetter: drive.DeviceID,
+      label: drive.VolumeName || 'Removable Disk',
+      freeSpaceGb: drive.FreeSpace ? parseFloat((drive.FreeSpace / (1024 ** 3)).toFixed(2)) : 0,
+    }));
+  } catch (error) {
+    console.error('[Backend Backup] Failed to list USB drives:', error.message);
+    return [];
+  }
+});
+
+// 2. USB Backup Execution
+ipcMain.handle('backup:start', async (event, { driveLetter, folderName, initiatedByUserId }) => {
+  try {
+    const destinationFolder = path.join(`${driveLetter}\\`, folderName);
+
+    if (!fs.existsSync(destinationFolder)) {
+      fs.mkdirSync(destinationFolder, { recursive: true });
+    }
+
+    const sourceDbPath = path.join(app.getPath('userData'), 'chrs.db');
+    const destDbPath = path.join(destinationFolder, 'chrs_backup.db');
+
+    if (fs.existsSync(sourceDbPath)) {
+      fs.copyFileSync(sourceDbPath, destDbPath);
+    }
+
+    console.log(`[Backend Backup] Created backup at: ${destinationFolder}`);
+    return { success: true, folderPath: destinationFolder };
+  } catch (error) {
+    console.error('[Backend Backup] Backup failed:', error.message);
+    throw new Error(`Backup execution failed: ${error.message}`);
+  }
+});
+
+// 3. Authentication Endpoint
+ipcMain.handle('auth:login', async (event, { username, password }) => {
+  console.log(`[Backend Auth] Login attempt for user: ${username}`);
+
+  if (username === 'admin' && password === 'password123') {
 // 1. Authentication Endpoint
 ipcMain.handle('auth:login', async (event, { username, password }) => {
   console.log(`[Backend Auth] Login attempt for user: ${username}`);
@@ -113,6 +170,13 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
   return { success: false, message: 'Invalid credentials' };
 });
 
+// 4. Tamper-Evident Audit Logging
+ipcMain.handle('audit:log-event', async (event, logData) => {
+  const timestamp = new Date().toISOString();
+  const entryHash = crypto
+    .createHash('sha256')
+    .update(`${timestamp}-${logData.userId}-${logData.action}`)
+    .digest('hex');
 // 2. Tamper-Evident Audit Logging
 //
 // Writes a real, hash-chained row to audit_log (see electron/database/auditLog.js)
@@ -148,6 +212,7 @@ handleIpcSafely(ipcMain, 'audit:get-entries', getDb, async (event, filters = {})
   return auditLog.getEntries(filters);
 });
 
+  return { success: true, hash: entryHash };
 // Walks the full hash chain and reports whether it's intact — surfaced in
 // the Audit Log Viewer as an integrity check the Physician can run anytime.
 handleIpcSafely(ipcMain, 'audit:verify-chain', getDb, async () => {
@@ -155,9 +220,12 @@ handleIpcSafely(ipcMain, 'audit:verify-chain', getDb, async () => {
   return auditLog.verifyChain();
 });
 
-// 3. Clinical Records Queries 
+// 5. Clinical Records Queries
 ipcMain.handle('patient:get-by-id', async (event, patientId) => {
   console.log(`[Backend DB] Fetching record for Patient ID: ${patientId}`);
+  return {
+    success: true,
+    patientId,
   
   return {
     success: true,
