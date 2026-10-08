@@ -3,6 +3,7 @@ import { CheckCircle2, X, Camera } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import SignaturePad from './SignaturePad';
+import { thumbnailFromBlob } from '../utils/photoThumbnails';
 
 /**
  * Camper Check-In Form
@@ -36,8 +37,6 @@ import SignaturePad from './SignaturePad';
  * - The 5-year vs. 10-year retention conflict between the client Q&A
  *   and the FSD
  *
- * NOTE: calls apiService.request('patient:create', ...), still not a
- * real IPC handler.
  */
 
 interface NewPatientProfileProps {
@@ -193,7 +192,7 @@ export default function NewPatientProfile({ onSaved, onCancel }: NewPatientProfi
     setSaving(true);
 
     try {
-      const result = await apiService.request<{ id: string }>('patient:create', {
+      const result = await apiService.request<{ success: boolean; id?: string; error?: string }>('patient:create', {
         firstName, surname, dateOfBirth, sex, tShirtSize, address, cellNumber, languageSpoken,
         photoDataUrl, campSessionDate,
         caregiverName, caregiverCell,
@@ -211,15 +210,14 @@ export default function NewPatientProfile({ onSaved, onCancel }: NewPatientProfi
         },
         createdByUserId: user?.userId,
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: 'PATIENT_PROFILE_CREATED',
-      });
+      if (!result?.success) throw new Error(result?.error || 'The patient profile could not be saved.');
       setNewPatientId(result?.id ?? '');
       setSaved(true);
       if (result?.id) onSaved?.(result.id);
-    } catch {
-      setErrors({ save: "Couldn't create this profile. Check the connection and try again." });
+    } catch (error) {
+      setErrors({
+        save: error instanceof Error ? error.message : "Couldn't create this profile. Check the connection and try again.",
+      });
     } finally {
       setSaving(false);
     }
@@ -264,9 +262,14 @@ export default function NewPatientProfile({ onSaved, onCancel }: NewPatientProfi
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => setPhotoDataUrl(reader.result as string);
-                reader.readAsDataURL(file);
+                try {
+                  // Shrunk to a small thumbnail so a multi-megabyte phone photo
+                  // never ends up in the encrypted database or the audit trail.
+                  setPhotoDataUrl(await thumbnailFromBlob(file));
+                } catch {
+                  setPhotoDataUrl(null);
+                }
+                e.target.value = '';
               }}
             />
           </label>

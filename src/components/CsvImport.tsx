@@ -1,7 +1,55 @@
 import { useState } from 'react';
 import { Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import Papa from 'papaparse';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+
+interface ParsedRow {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  primaryDiagnosis: string;
+  rowErrors: string[];
+}
+
+const EXPECTED_HEADERS = ['FirstName', 'LastName', 'DateOfBirth', 'PrimaryDiagnosis'];
+
+function parseCsv(text: string): { rows: ParsedRow[]; headerError?: string } {
+  if (!text.trim()) return { rows: [], headerError: 'The file is empty.' };
+
+  const result = Papa.parse<Record<string, string>>(text, {
+    header: true,
+    skipEmptyLines: 'greedy',
+    transformHeader: (header) => header.replace(/^\uFEFF/, '').trim().toLowerCase(),
+  });
+  const headers = result.meta.fields ?? [];
+  const missing = EXPECTED_HEADERS.filter((header) => !headers.includes(header.toLowerCase()));
+
+  if (missing.length > 0) {
+    return { rows: [], headerError: `Missing required column(s): ${missing.join(', ')}` };
+  }
+
+  const rows = result.data.map((record) => {
+    const row: ParsedRow = {
+      firstName: record.firstname?.trim() ?? '',
+      lastName: record.lastname?.trim() ?? '',
+      dateOfBirth: record.dateofbirth?.trim() ?? '',
+      primaryDiagnosis: record.primarydiagnosis?.trim() ?? '',
+      rowErrors: [],
+    };
+    const date = new Date(`${row.dateOfBirth}T00:00:00.000Z`);
+
+    if (!row.firstName) row.rowErrors.push('Missing FirstName');
+    if (!row.lastName) row.rowErrors.push('Missing LastName');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(row.dateOfBirth) || Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== row.dateOfBirth) {
+      row.rowErrors.push('DateOfBirth must be a valid YYYY-MM-DD date');
+    }
+    if (!row.primaryDiagnosis) row.rowErrors.push('Missing PrimaryDiagnosis');
+    return row;
+  });
+
+  return { rows };
+}
 
 /**
  * FR-02 / Tech Spec Section "Data Backup, Import, and Retention":
@@ -15,76 +63,43 @@ import { useAuth } from '../context/AuthContext';
  * against a real Foundation-provided file. Expect to revisit the column
  * mapping once OI-06 is resolved.
  *
- * Parsing is done client-side with a minimal hand-rolled CSV reader
- * since no CSV library (e.g. papaparse) is in package.json yet — this
- * does not handle quoted fields containing commas. Fine for a simple
- * roster file; swap for papaparse if real-world files turn out messier.
- *
- * NOTE: apiService.request('patient:import-csv', ...) does NOT exist
- * in electron/main.js yet.
  */
-
-interface ParsedRow {
-  firstName: string;
-  lastName: string;
-  dateOfBirth: string;
-  primaryDiagnosis: string;
-  rowErrors: string[];
+function getLocalDate(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-const EXPECTED_HEADERS = ['FirstName', 'LastName', 'DateOfBirth', 'PrimaryDiagnosis'];
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+async function readCsvFile(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let encoding = 'utf-8';
 
-function parseCsv(text: string): { rows: ParsedRow[]; headerError?: string } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length === 0) return { rows: [], headerError: 'The file is empty.' };
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = 'utf-16le';
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = 'utf-16be';
 
-  const headers = lines[0].split(',').map((h) => h.trim());
-  const missing = EXPECTED_HEADERS.filter((h) => !headers.includes(h));
-  if (missing.length > 0) {
-    return { rows: [], headerError: `Missing required column(s): ${missing.join(', ')}` };
-  }
-
-  const idx = {
-    firstName: headers.indexOf('FirstName'),
-    lastName: headers.indexOf('LastName'),
-    dateOfBirth: headers.indexOf('DateOfBirth'),
-    primaryDiagnosis: headers.indexOf('PrimaryDiagnosis'),
-  };
-
-  const rows: ParsedRow[] = lines.slice(1).map((line) => {
-    const cells = line.split(',').map((c) => c.trim());
-    const row: ParsedRow = {
-      firstName: cells[idx.firstName] ?? '',
-      lastName: cells[idx.lastName] ?? '',
-      dateOfBirth: cells[idx.dateOfBirth] ?? '',
-      primaryDiagnosis: cells[idx.primaryDiagnosis] ?? '',
-      rowErrors: [],
-    };
-    if (!row.firstName) row.rowErrors.push('Missing FirstName');
-    if (!row.lastName) row.rowErrors.push('Missing LastName');
-    if (!DATE_PATTERN.test(row.dateOfBirth)) row.rowErrors.push('DateOfBirth must be YYYY-MM-DD');
-    return row;
-  });
-
-  return { rows };
+  return new TextDecoder(encoding).decode(buffer);
 }
 
 export default function CsvImport() {
   const { user } = useAuth();
-  const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [rows, setRows] = useState<ReturnType<typeof parseCsv>['rows']>([]);
   const [headerError, setHeaderError] = useState('');
   const [fileName, setFileName] = useState('');
+  const [campSessionDate, setCampSessionDate] = useState(getLocalDate);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleFile = async (file: File) => {
     setImportResult(null);
     setFileName(file.name);
-    const text = await file.text();
-    const { rows: parsed, headerError: err } = parseCsv(text);
-    setRows(parsed);
-    setHeaderError(err ?? '');
+    try {
+      const { rows: parsed, headerError: err } = parseCsv(await readCsvFile(file));
+      setRows(parsed);
+      setHeaderError(err ?? '');
+    } catch {
+      setRows([]);
+      setHeaderError('Could not read this file. Save it as a CSV and try again.');
+    }
   };
 
   const validRowCount = rows.filter((r) => r.rowErrors.length === 0).length;
@@ -93,22 +108,23 @@ export default function CsvImport() {
   const handleImport = async () => {
     setImporting(true);
     try {
-      const result = await apiService.request<{ imported: number; duplicates: number }>('patient:import-csv', {
+      const result = await apiService.request<{ success: boolean; imported: number; duplicates: number; error?: string }>('patient:import-csv', {
         rows: rows.filter((r) => r.rowErrors.length === 0),
         importedByUserId: user?.userId,
+        campSessionDate,
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: 'PATIENT_CSV_IMPORTED',
-      });
+      if (!result?.success) throw new Error(result?.error || 'The import could not be completed.');
       setImportResult({
         success: true,
-        message: `Imported ${result?.imported ?? validRowCount} record(s).${
+        message: `Imported ${result.imported} record(s).${
           result?.duplicates ? ` ${result.duplicates} duplicate(s) skipped.` : ''
         }`,
       });
-    } catch {
-      setImportResult({ success: false, message: "Import failed — the backend handler for this isn't built yet." });
+    } catch (error) {
+      setImportResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Import failed. Check the file and try again.',
+      });
     } finally {
       setImporting(false);
     }
@@ -122,12 +138,22 @@ export default function CsvImport() {
       </header>
 
       <div className="p-5">
+        <label className="mb-3 block text-xs font-medium text-slate-600">
+          Camp session date
+          <input
+            type="date"
+            value={campSessionDate}
+            onChange={(e) => setCampSessionDate(e.target.value)}
+            className="mt-1 block rounded border border-slate-300 px-3 py-2 text-sm text-ink"
+            required
+          />
+        </label>
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded border-2 border-dashed border-slate-300 p-6 text-sm text-slate-500 hover:border-clinical-500 hover:bg-clinical-50">
           <Upload className="h-4 w-4" aria-hidden="true" />
           {fileName || 'Click to choose a .csv file'}
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,text/csv"
             className="hidden"
             onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
           />
@@ -180,7 +206,7 @@ export default function CsvImport() {
 
             <button
               onClick={handleImport}
-              disabled={importing || validRowCount === 0}
+              disabled={importing || validRowCount === 0 || !campSessionDate}
               className="mt-3 rounded bg-clinical-500 px-4 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50"
             >
               {importing ? 'Importing…' : `Import ${validRowCount} record(s)`}

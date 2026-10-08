@@ -1,241 +1,172 @@
 import { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import SignaturePad from './SignaturePad';
+import { Section, Field, YesNo, SavedCard, inputCls } from './FormBits';
 
 /**
- * FR-06: Medical Centre Check-In for Staff and Crew
- *
- * Per spec: full name (auto-populated or selectable), role, camp site,
- * presenting complaint/reason, vital signs (OPTIONAL — unlike the
- * camper form where vitals are required), assessment notes, treatment
- * provided, disposition. Stored SEPARATELY from camper records — never
- * combined in any report or export that leaves the Medical Centre
- * (Section 6, Security). Retention: 12 months, pending legal
- * confirmation (OI-04) — NOT the 10-year camper retention period.
- *
- * NOTE: calls apiService.request('staff:save-checkin', ...), which does
- * NOT exist in electron/main.js yet — same backend gap as the other
- * three forms. This one especially needs its own database table,
- * separate from the campers table, per the spec's storage-separation
- * requirement above.
+ * Medical Centre Check-In - Staff / Crew Members. Rebuilt against the real
+ * paper form ("Medical Check In Crew"). Stored in a separate staff table,
+ * never joined to camper records.
  */
 
-interface StaffCheckInProps {
-  onSaved?: () => void;
-  onCancel?: () => void;
-}
+type YN = '' | 'yes' | 'no';
+const today = () => new Date().toISOString().slice(0, 10);
 
-export default function StaffCheckIn({ onSaved, onCancel }: StaffCheckInProps) {
+interface Props { onSaved?: () => void; onCancel?: () => void }
+
+export default function StaffCheckIn({ onSaved, onCancel }: Props) {
   const { user } = useAuth();
-
-  const [fullName, setFullName] = useState(user?.username ?? '');
-  const [role, setRole] = useState('');
-  const [campSite, setCampSite] = useState('');
-  const [complaint, setComplaint] = useState('');
-  const [temperature, setTemperature] = useState('');
-  const [bloodPressure, setBloodPressure] = useState('');
-  const [assessmentNotes, setAssessmentNotes] = useState('');
-  const [treatmentProvided, setTreatmentProvided] = useState('');
-  const [disposition, setDisposition] = useState('');
-
+  const [name, setName] = useState('');
+  const [dob, setDob] = useState('');
+  const [allergies, setAllergies] = useState<YN>('');
+  const [allergyDetail, setAllergyDetail] = useState('');
+  const [broviac, setBroviac] = useState<YN>('');
+  const [f, setF] = useState<Record<string, string>>({});
+  const [tb, setTb] = useState<Record<string, string>>({});
+  const [adl, setAdl] = useState<Record<string, string>>({});
+  const [medication, setMedication] = useState<YN>('');
+  const [bloodCount, setBloodCount] = useState<YN>('');
+  const [bloodDate, setBloodDate] = useState('');
+  const [comments, setComments] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [crewSig, setCrewSig] = useState<string | null>(null);
+  const [crewDate, setCrewDate] = useState(today());
+  const [medName, setMedName] = useState(user?.username ?? '');
+  const [medSig, setMedSig] = useState<string | null>(null);
+  const [medDate, setMedDate] = useState(today());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const validate = (): boolean => {
-    const next: Record<string, string> = {};
-    if (!fullName.trim()) next.fullName = 'Required.';
-    if (!campSite.trim()) next.campSite = 'Required.';
-    if (!complaint.trim()) next.complaint = 'Required — reason for visit.';
-    if (!disposition.trim()) next.disposition = 'Required.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
+  const set = (obj: Record<string, string>, fn: (v: Record<string, string>) => void, k: string, v: string) => fn({ ...obj, [k]: v });
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!name.trim()) e.name = 'Required.';
+    if (!agreed) e.agreed = 'The crew member must accept the medical release policy.';
+    if (!crewSig) e.crewSig = 'Crew member signature is required.';
+    if (!medSig) e.medSig = 'Medical person signature is required.';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const save = async (ev: React.FormEvent) => {
+    ev.preventDefault();
     if (!validate()) return;
     setSaving(true);
-
     try {
-      // Stored in a separate staff_checkins table, never joined with
-      // camper records — see Section 6 Security in the tech spec.
-      await apiService.request('staff:save-checkin', {
-        fullName,
-        role,
-        campSite,
-        complaint,
-        vitals: temperature || bloodPressure ? { temperature, bloodPressure } : undefined,
-        assessmentNotes,
-        treatmentProvided,
-        disposition,
+      const res = await apiService.request<{ success: boolean; message?: string }>('staff:save-checkin', {
+        name, dob, allergies, allergyDetail, broviac, screening: f, tbScreening: tb, dailyLiving: adl,
+        medication, bloodCount, bloodDate, comments,
+        releaseAccepted: agreed, crewSignature: crewSig, crewDate, medicalPersonName: medName, medicalPersonSignature: medSig, medicalDate: medDate,
         recordedByUserId: user?.userId,
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: 'STAFF_CHECKIN_SAVED',
-      });
+      if (!res?.success) throw new Error(res?.message);
+      await apiService.request('audit:log-event', { userId: user?.userId, action: 'STAFF_CHECKIN_SAVED', actionType: 'CREATE', targetTable: 'staff_forms' });
       setSaved(true);
       onSaved?.();
-    } catch {
-      setErrors({ save: "Couldn't save this check-in. Check the connection and try again." });
+    } catch (err) {
+      setErrors({ save: err instanceof Error && err.message ? err.message : "Couldn't save. Try again." });
     } finally {
       setSaving(false);
     }
   };
 
-  if (saved) {
-    return (
-      <div className="mx-auto max-w-2xl rounded border border-confirm-500 bg-confirm-50 p-6 text-center">
-        <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-confirm-600" aria-hidden="true" />
-        <p className="font-semibold text-confirm-600">Staff check-in saved</p>
-        <p className="mt-1 text-sm text-slate-700">
-          Stored separately from camper records, retained for 12 months.
-        </p>
-      </div>
-    );
-  }
+  if (saved) return <SavedCard title="Staff check-in saved" note="Stored separately from camper records." />;
+
+  const detail = (label: string, key: string, obj: Record<string, string>, fn: (v: Record<string, string>) => void) => (
+    <Field label={label}><input value={obj[key] ?? ''} onChange={(e) => set(obj, fn, key, e.target.value)} className={inputCls()} /></Field>
+  );
 
   return (
-    <form onSubmit={handleSave} className="mx-auto max-w-2xl space-y-4 pb-12">
+    <form onSubmit={save} className="mx-auto max-w-3xl space-y-4 pb-12">
       <div>
-        <h1 className="text-lg font-semibold text-ink">Medical Centre Check-In &mdash; Staff and Crew</h1>
-        <p className="text-xs text-slate-500">
-          Stored separately from camper records. Never combined in any report leaving the Medical Centre.
-        </p>
+        <h1 className="text-lg font-semibold text-ink">Medical Centre Check-In &mdash; Staff / Crew Members</h1>
+        <p className="text-xs text-slate-500">Stored separately from camper records.</p>
       </div>
 
-      <section className="rounded border border-slate-100 bg-white shadow-card">
-        <header className="border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-ink">Staff details</h2>
-        </header>
-        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink">
-              Full name<span className="ml-0.5 text-alert-500">*</span>
-            </label>
-            <input
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className={`w-full rounded border px-3 py-2 text-sm ${errors.fullName ? 'border-alert-500' : 'border-slate-300'}`}
-            />
-            {errors.fullName && <p className="mt-1 text-xs font-medium text-alert-600">{errors.fullName}</p>}
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Role</label>
-            <input
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder="e.g. Counselor, Kitchen Staff"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-sm font-medium text-ink">
-              Camp site<span className="ml-0.5 text-alert-500">*</span>
-            </label>
-            <input
-              value={campSite}
-              onChange={(e) => setCampSite(e.target.value)}
-              placeholder="Gauteng, Free State, Eastern Cape, Western Cape, KwaZulu-Natal"
-              className={`w-full rounded border px-3 py-2 text-sm ${errors.campSite ? 'border-alert-500' : 'border-slate-300'}`}
-            />
-            {errors.campSite && <p className="mt-1 text-xs font-medium text-alert-600">{errors.campSite}</p>}
+      <Section title="Crew member">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Name" required error={errors.name}><input value={name} onChange={(e) => setName(e.target.value)} className={inputCls(errors.name)} /></Field>
+          <Field label="Date of birth"><input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={inputCls()} /></Field>
+        </div>
+      </Section>
+
+      <Section title="Health">
+        <div className="space-y-4">
+          <YesNo label="Allergies" value={allergies} onChange={setAllergies} />
+          {allergies === 'yes' && <Field label="Which allergies?"><input value={allergyDetail} onChange={(e) => setAllergyDetail(e.target.value)} className={inputCls()} /></Field>}
+          <YesNo label="Broviac / Port-a-cath" value={broviac} onChange={setBroviac} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {detail('Eyesight', 'eyesight', f, setF)}
+            {detail('Hearing', 'hearing', f, setF)}
+            {detail('Mobility aids', 'mobility', f, setF)}
+            {detail('Prosthesis', 'prosthesis', f, setF)}
+            {detail('Other', 'other', f, setF)}
           </div>
         </div>
-      </section>
+      </Section>
 
-      <section className="rounded border border-slate-100 bg-white shadow-card">
-        <header className="border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-ink">Visit</h2>
-        </header>
-        <div className="space-y-4 p-5">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink">
-              Presenting complaint / reason for visit<span className="ml-0.5 text-alert-500">*</span>
-            </label>
-            <textarea
-              value={complaint}
-              onChange={(e) => setComplaint(e.target.value)}
-              rows={2}
-              className={`w-full rounded border px-3 py-2 text-sm ${errors.complaint ? 'border-alert-500' : 'border-slate-300'}`}
-            />
-            {errors.complaint && <p className="mt-1 text-xs font-medium text-alert-600">{errors.complaint}</p>}
+      <Section title="Screening">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {detail('A cough that lasts longer than 2 weeks', 'cough', tb, setTb)}
+          {detail('Unexplained weight loss', 'weightLoss', tb, setTb)}
+          {detail('Night sweats or unexplained fevers', 'sweats', tb, setTb)}
+        </div>
+      </Section>
+
+      <Section title="Assistance with daily living">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {detail('Shower / Bath', 'shower', adl, setAdl)}
+          {detail('Dressing', 'dressing', adl, setAdl)}
+          {detail('Toileting', 'toileting', adl, setAdl)}
+          {detail('Eating', 'eating', adl, setAdl)}
+        </div>
+      </Section>
+
+      <Section title="Medication">
+        <div className="space-y-4">
+          <YesNo label="Medication" value={medication} onChange={setMedication} />
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="min-w-[14rem] flex-1"><YesNo label="Blood count" value={bloodCount} onChange={setBloodCount} /></div>
+            <Field label="Date"><input type="date" value={bloodDate} onChange={(e) => setBloodDate(e.target.value)} className={inputCls()} /></Field>
           </div>
+          <Field label="Other comments"><textarea rows={3} value={comments} onChange={(e) => setComments(e.target.value)} className={inputCls()} /></Field>
+          <p className="rounded bg-slate-100 p-3 text-xs text-slate-700">
+            Camp staff, volunteers and visitors must have their meds stored and dispensed by the camp medical staff during camp.
+            Prior to camp, the Medical Leader fills out a Medical Intake Card listing any medications taken regularly, including vitamins, ARVs and supplements.
+          </p>
+        </div>
+      </Section>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Temperature (optional)</label>
-              <input
-                value={temperature}
-                onChange={(e) => setTemperature(e.target.value)}
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              />
+      <Section title="Medical release policy for volunteers and staff">
+        <div className="space-y-3 text-sm text-slate-700">
+          <p>In case of accident or illness, medical services may be provided by the camp medical staff. The doctor or nurse will refer a staff/camp crew member to other medical services when, in his/her professional judgment, such a referral is necessary.</p>
+          <p>In the event of an emergency arising from a serious illness or injury, if the staff/camp crew member is unable to give consent, the camp medical staff is authorized to carry out any medical or surgical procedures which he/she deems necessary for the wellbeing of the staff member.</p>
+          <label className="flex items-start gap-2 font-medium text-ink">
+            <input type="checkbox" className="mt-1" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            I have read, understand, and agree to abide by the above. I attest that I am physically fit for camp and there are no medical restrictions that would limit my ability to perform the essential functions of my job. I understand that Camp Footprints assumes no responsibility for any pre-existing injury or illness.
+          </label>
+          {errors.agreed && <p className="text-xs font-medium text-alert-600">{errors.agreed}</p>}
+          <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
+            <div className="space-y-3">
+              <SignaturePad label="Camp crew signature" onChange={setCrewSig} error={errors.crewSig} />
+              <Field label="Date"><input type="date" value={crewDate} onChange={(e) => setCrewDate(e.target.value)} className={inputCls()} /></Field>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Blood pressure (optional)</label>
-              <input
-                value={bloodPressure}
-                onChange={(e) => setBloodPressure(e.target.value)}
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              />
+            <div className="space-y-3">
+              <Field label="Medical person name"><input value={medName} onChange={(e) => setMedName(e.target.value)} className={inputCls()} /></Field>
+              <SignaturePad label="Medical person signature" onChange={setMedSig} error={errors.medSig} />
+              <Field label="Date"><input type="date" value={medDate} onChange={(e) => setMedDate(e.target.value)} className={inputCls()} /></Field>
             </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Assessment notes</label>
-            <textarea
-              value={assessmentNotes}
-              onChange={(e) => setAssessmentNotes(e.target.value)}
-              rows={2}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Treatment provided</label>
-            <textarea
-              value={treatmentProvided}
-              onChange={(e) => setTreatmentProvided(e.target.value)}
-              rows={2}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink">
-              Disposition<span className="ml-0.5 text-alert-500">*</span>
-            </label>
-            <input
-              value={disposition}
-              onChange={(e) => setDisposition(e.target.value)}
-              className={`w-full rounded border px-3 py-2 text-sm ${errors.disposition ? 'border-alert-500' : 'border-slate-300'}`}
-            />
-            {errors.disposition && <p className="mt-1 text-xs font-medium text-alert-600">{errors.disposition}</p>}
           </div>
         </div>
-      </section>
+      </Section>
 
       {errors.save && <p className="text-sm font-medium text-alert-600">{errors.save}</p>}
-
       <div className="flex justify-end gap-3">
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-        )}
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded bg-clinical-500 px-5 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save check-in'}
-        </button>
+        <button type="button" onClick={onCancel} className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+        <button type="submit" disabled={saving} className="rounded bg-clinical-500 px-5 py-2 text-sm font-semibold text-white hover:bg-clinical-600 disabled:opacity-50">{saving ? 'Saving…' : 'Save check-in'}</button>
       </div>
     </form>
   );

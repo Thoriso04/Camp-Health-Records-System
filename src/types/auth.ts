@@ -7,7 +7,8 @@ export type Permission =
   | 'IMPORT_CSV'
   | 'VIEW_AUDIT_LOGS'
   | 'FILE_INCIDENT_REPORT'
-  | 'MANAGE_BACKUP';
+  | 'MANAGE_BACKUP'
+  | 'MANAGE_PHOTOS';
 
 export interface UserSession {
   userId: string;

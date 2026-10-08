@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, LogOut, ShieldCheck, Pill, ClipboardList, AlertTriangle, UserPlus, Users } from 'lucide-react';
+import { Search, LogOut, ShieldCheck, Pill, ClipboardList, AlertTriangle, UserPlus, Users, CalendarCheck, FileSignature } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 import { AllergyAlertBanner } from './AllergyAlertBanner';
@@ -9,22 +9,29 @@ import MedicationCheckIn from './MedicationCheckIn';
 import MedShackVisitRecord from './MedShackVisitRecord';
 import NearMissIncidentForm from './NearMissIncidentForm';
 import StaffCheckIn from './StaffCheckIn';
+import CrewIndemnity from './CrewIndemnity';
 import NewPatientProfile from './NewPatientProfile';
+import MedicationLog from './MedicationLog';
+import MissedDosesPanel from './MissedDosesPanel';
 import AuditLogViewer from './AuditLogViewer';
-import CsvImport from './CsvImport';
+import SheetSync from './SheetSync';
+import RegistrationCsvImport from './RegistrationCsvImport';
+import PatientPhoto from './PatientPhoto';
 import UsbBackup from './UsbBackup';
 import PendingUsersApproval from './PendingUsersApproval';
 
 interface PatientRecord {
   id: string;
+  databaseId: string;
   name: string;
   dateOfBirth?: string;
   allergies: string[];
   diagnosis: string;
   medicalNotes?: string;
+  photoDataUrl?: string | null;
 }
 
-type ActiveForm = 'none' | 'medication' | 'medshack' | 'incident' | 'staff-checkin' | 'new-patient';
+type ActiveForm = 'none' | 'medication' | 'medshack' | 'incident' | 'staff-checkin' | 'crew-indemnity' | 'new-patient' | 'medlog';
 
 export default function MedicalDashboard() {
   const { user, logout } = useAuth();
@@ -34,27 +41,38 @@ export default function MedicalDashboard() {
   const [error, setError] = useState('');
   const [activeForm, setActiveForm] = useState<ActiveForm>('none');
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!patientIdInput.trim()) {
-      setError('Enter a patient ID or search term first.');
-      return;
-    }
+  const loadPatient = async (searchTerm: string) => {
     setError('');
     setLoading(true);
     try {
-      const result = await apiService.request<PatientRecord>('patient:get-by-id', patientIdInput.trim());
-      setPatient(result);
+      const result = await apiService.request<{ success: boolean; patient?: PatientRecord; error?: string }>(
+        'patient:get-by-id',
+        searchTerm,
+      );
+      if (!result?.success || !result.patient) {
+        throw new Error(result?.error || 'No matching patient was found.');
+      }
+      setPatient(result.patient);
       setActiveForm('none');
       await apiService.request('audit:log-event', {
         userId: user?.userId,
         action: 'PATIENT_RECORD_VIEWED',
       });
-    } catch {
-      setError("Couldn't load that patient record. Check the ID and try again.");
+    } catch (loadError) {
+      setPatient(null);
+      setError(loadError instanceof Error ? loadError.message : "Couldn't load that patient record.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patientIdInput.trim()) {
+      setError('Enter a patient ID or full name first.');
+      return;
+    }
+    await loadPatient(patientIdInput);
   };
 
   return (
@@ -101,8 +119,8 @@ export default function MedicalDashboard() {
                     type="text"
                     value={patientIdInput}
                     onChange={(e) => setPatientIdInput(e.target.value)}
-                    placeholder="Search by patient ID (e.g. CAMPER-001)"
-                    aria-label="Search for a patient by ID"
+                    placeholder="Search by patient ID or full name"
+                    aria-label="Search for a patient by ID or full name"
                     className="w-full rounded border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm text-ink placeholder:text-slate-500"
                   />
                 </div>
@@ -156,14 +174,23 @@ export default function MedicalDashboard() {
             onSaved={() => setActiveForm('none')}
           />
         )}
+        {activeForm === 'crew-indemnity' && (
+          <CrewIndemnity
+            onCancel={() => setActiveForm('none')}
+            onSaved={() => setActiveForm('none')}
+          />
+        )}
         {activeForm === 'new-patient' && (
           <NewPatientProfile
             onCancel={() => setActiveForm('none')}
-            onSaved={(id) => {
-              setActiveForm('none');
+            onSaved={async (id) => {
               setPatientIdInput(id);
+              await loadPatient(id);
             }}
           />
+        )}
+        {activeForm === 'medlog' && patient && (
+          <MedicationLog patient={patient} onClose={() => setActiveForm('none')} />
         )}
 
         {/* Patient record + form launchers */}
@@ -176,10 +203,18 @@ export default function MedicalDashboard() {
             />
 
             <div className="rounded border border-slate-100 bg-white p-5 shadow-card">
-              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-ink">{patient.name}</h2>
-                  <p className="font-mono text-xs text-slate-500">{patient.id}</p>
+              <div className="mb-4 flex items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-4">
+                  <PatientPhoto
+                    patientId={patient.databaseId}
+                    patientName={patient.name}
+                    photoDataUrl={patient.photoDataUrl ?? null}
+                    onChanged={(photoDataUrl) => setPatient((current) => (current ? { ...current, photoDataUrl } : current))}
+                  />
+                  <div>
+                    <h2 className="text-sm font-semibold text-ink">{patient.name}</h2>
+                    <p className="font-mono text-xs text-slate-500">{patient.id}</p>
+                  </div>
                 </div>
                 <ProtectedView requiredPermission="EDIT_CLINICAL_RECORDS">
                   <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-clinical-600 hover:bg-clinical-50">
@@ -204,7 +239,7 @@ export default function MedicalDashboard() {
                     <Pill className="h-5 w-5 text-clinical-500" aria-hidden="true" />
                     <div>
                       <p className="text-sm font-semibold text-ink">Medication check-in</p>
-                      <p className="text-xs text-slate-500">Digitised FR-03 assessment form</p>
+                      <p className="text-xs text-slate-500">Digitised assessment form</p>
                     </div>
                   </button>
                   <button
@@ -214,11 +249,22 @@ export default function MedicalDashboard() {
                     <ClipboardList className="h-5 w-5 text-clinical-500" aria-hidden="true" />
                     <div>
                       <p className="text-sm font-semibold text-ink">MedShack visit</p>
-                      <p className="text-xs text-slate-500">Digitised FR-04 visit record</p>
+                      <p className="text-xs text-slate-500">Digitised visit record</p>
                     </div>
                   </button>
                 </div>
               </ProtectedView>
+
+              <button
+                onClick={() => setActiveForm('medlog')}
+                className="mt-3 flex w-full items-center gap-3 rounded border border-slate-200 p-4 text-left hover:border-clinical-500 hover:bg-clinical-50"
+              >
+                <CalendarCheck className="h-5 w-5 text-clinical-500" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-ink">Medications and treatments log</p>
+                  <p className="text-xs text-slate-500">Weekly dose record with automatic missed-dose alerts</p>
+                </div>
+              </button>
 
               <ProtectedView requiredPermission="FILE_INCIDENT_REPORT">
                 <button
@@ -228,7 +274,7 @@ export default function MedicalDashboard() {
                   <AlertTriangle className="h-5 w-5 text-amber-600" aria-hidden="true" />
                   <div>
                     <p className="text-sm font-semibold text-amber-600">File a near-miss / incident report</p>
-                    <p className="text-xs text-amber-600">Restricted &mdash; FR-05. Cannot be edited once filed.</p>
+                    <p className="text-xs text-amber-600">Restricted &mdash; Cannot be edited once filed.</p>
                   </div>
                 </button>
               </ProtectedView>
@@ -245,9 +291,11 @@ export default function MedicalDashboard() {
           </div>
         )}
 
-        {/* Staff check-in and audit log - not tied to a loaded patient */}
+        {/* Staff check-in, admin tools and audit log - not tied to a loaded patient */}
         {activeForm === 'none' && (
           <div className="mt-6 space-y-6">
+            <MissedDosesPanel />
+
             <ProtectedView requiredPermission="EDIT_CLINICAL_RECORDS">
               <button
                 onClick={() => setActiveForm('staff-checkin')}
@@ -256,9 +304,27 @@ export default function MedicalDashboard() {
                 <Users className="h-5 w-5 text-clinical-500" aria-hidden="true" />
                 <div>
                   <p className="text-sm font-semibold text-ink">Medical Centre check-in &mdash; staff and crew</p>
-                  <p className="text-xs text-slate-500">FR-06. Stored separately from camper records.</p>
+                  <p className="text-xs text-slate-500">Stored separately from camper records.</p>
                 </div>
               </button>
+            </ProtectedView>
+
+            <ProtectedView requiredPermission="EDIT_CLINICAL_RECORDS">
+              <button
+                onClick={() => setActiveForm('crew-indemnity')}
+                className="flex w-full items-center gap-3 rounded border border-slate-200 bg-white p-4 text-left shadow-card hover:border-clinical-500 hover:bg-clinical-50"
+              >
+                <FileSignature className="h-5 w-5 text-clinical-500" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-ink">Camp crew indemnity and media release</p>
+                  <p className="text-xs text-slate-500">Signed by each crew member and a witness. Stored with staff records.</p>
+                </div>
+              </button>
+            </ProtectedView>
+
+            {/* New staff accounts waiting for an Administrator to approve them */}
+            <ProtectedView requiredPermission="MANAGE_USERS">
+              <PendingUsersApproval />
             </ProtectedView>
 
             <ProtectedView requiredPermission="VIEW_AUDIT_LOGS">
@@ -266,11 +332,13 @@ export default function MedicalDashboard() {
             </ProtectedView>
 
             <ProtectedView requiredPermission="IMPORT_CSV">
-              <CsvImport />
+              <SheetSync />
             </ProtectedView>
 
-            <ProtectedView requiredPermission="MANAGE_USERS">
-              <PendingUsersApproval />
+            {/* Offline fallback for when the online sheet can't be reached:
+                a CSV downloaded from the same sheet, same duplicate protection. */}
+            <ProtectedView requiredPermission="IMPORT_CSV">
+              <RegistrationCsvImport />
             </ProtectedView>
 
             <ProtectedView requiredPermission="MANAGE_BACKUP">
