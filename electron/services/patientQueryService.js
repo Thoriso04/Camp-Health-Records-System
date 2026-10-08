@@ -25,6 +25,8 @@ function mapPatient(row) {
       : [],
     diagnosis: row.primary_diagnosis,
     medicalNotes,
+    // null when the child has no photo; the screen then shows a blank placeholder.
+    photoDataUrl: typeof profileDetails.photoDataUrl === 'string' && profileDetails.photoDataUrl ? profileDetails.photoDataUrl : null,
   };
 }
 

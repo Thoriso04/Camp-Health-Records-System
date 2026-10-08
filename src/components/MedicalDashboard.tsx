@@ -11,7 +11,9 @@ import NearMissIncidentForm from './NearMissIncidentForm';
 import StaffCheckIn from './StaffCheckIn';
 import NewPatientProfile from './NewPatientProfile';
 import AuditLogViewer from './AuditLogViewer';
-import CsvImport from './CsvImport';
+import SheetSync from './SheetSync';
+import RegistrationCsvImport from './RegistrationCsvImport';
+import PatientPhoto from './PatientPhoto';
 import UsbBackup from './UsbBackup';
 
 interface PatientRecord {
@@ -22,6 +24,7 @@ interface PatientRecord {
   allergies: string[];
   diagnosis: string;
   medicalNotes?: string;
+  photoDataUrl?: string | null;
 }
 
 type ActiveForm = 'none' | 'medication' | 'medshack' | 'incident' | 'staff-checkin' | 'new-patient';
@@ -187,10 +190,18 @@ export default function MedicalDashboard() {
             />
 
             <div className="rounded border border-slate-100 bg-white p-5 shadow-card">
-              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-ink">{patient.name}</h2>
-                  <p className="font-mono text-xs text-slate-500">{patient.id}</p>
+              <div className="mb-4 flex items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-4">
+                  <PatientPhoto
+                    patientId={patient.databaseId}
+                    patientName={patient.name}
+                    photoDataUrl={patient.photoDataUrl ?? null}
+                    onChanged={(photoDataUrl) => setPatient((current) => (current ? { ...current, photoDataUrl } : current))}
+                  />
+                  <div>
+                    <h2 className="text-sm font-semibold text-ink">{patient.name}</h2>
+                    <p className="font-mono text-xs text-slate-500">{patient.id}</p>
+                  </div>
                 </div>
                 <ProtectedView requiredPermission="EDIT_CLINICAL_RECORDS">
                   <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-clinical-600 hover:bg-clinical-50">
@@ -277,7 +288,13 @@ export default function MedicalDashboard() {
             </ProtectedView>
 
             <ProtectedView requiredPermission="IMPORT_CSV">
-              <CsvImport />
+              <SheetSync />
+            </ProtectedView>
+
+            {/* Offline fallback for when the online sheet can't be reached:
+                a CSV downloaded from the same sheet, same duplicate protection. */}
+            <ProtectedView requiredPermission="IMPORT_CSV">
+              <RegistrationCsvImport />
             </ProtectedView>
 
             <ProtectedView requiredPermission="MANAGE_BACKUP">
@@ -288,4 +305,4 @@ export default function MedicalDashboard() {
       </main>
     </div>
   );
-}
+}

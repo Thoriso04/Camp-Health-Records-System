@@ -13,7 +13,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'patient:get-by-id',
       'patient:save-record',
       'patient:create',
-      'patient:import-csv',
+      'patient:set-photo',
+      'sheet:status',
+      'sheet:preview',
+      'sheet:sync',
+      'registration:fetch-drive-photos',
+      'registration:csv-preview',
+      'registration:csv-import',
       'audit:log-event',
       'audit:get-entries',
       'audit:verify-chain',
@@ -37,4 +43,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
   }
-});
+});

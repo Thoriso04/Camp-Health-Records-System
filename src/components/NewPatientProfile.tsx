@@ -3,6 +3,7 @@ import { CheckCircle2, X, Camera } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import SignaturePad from './SignaturePad';
+import { thumbnailFromBlob } from '../utils/photoThumbnails';
 
 /**
  * Camper Check-In Form
@@ -261,9 +262,14 @@ export default function NewPatientProfile({ onSaved, onCancel }: NewPatientProfi
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => setPhotoDataUrl(reader.result as string);
-                reader.readAsDataURL(file);
+                try {
+                  // Shrunk to a small thumbnail so a multi-megabyte phone photo
+                  // never ends up in the encrypted database or the audit trail.
+                  setPhotoDataUrl(await thumbnailFromBlob(file));
+                } catch {
+                  setPhotoDataUrl(null);
+                }
+                e.target.value = '';
               }}
             />
           </label>

@@ -49,6 +49,9 @@ function createPatientProfile(db, profile = {}) {
     additionalDisclosures: profile.additionalDisclosures ?? '',
     linkedSiblingId: profile.linkedSiblingId ?? '',
     consent: profile.consent ?? {},
+    // Only present for records that didn't come from the in-app form
+    // (e.g. 'google_sheet'), so existing profiles keep their exact shape.
+    ...(profile.source ? { source: String(profile.source) } : {}),
   });
 
   const insertPatient = db.prepare(`
@@ -78,6 +81,7 @@ function createPatientProfile(db, profile = {}) {
       actionType: 'CREATE',
       targetTable: 'patients',
       targetId: id,
+      details: profile.auditDetails ? String(profile.auditDetails) : null,
       afterImage: {
         first_name: firstName,
         last_name: lastName,

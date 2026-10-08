@@ -16,3 +16,7 @@ out/
 .env
 *.key
 .DS_Store
+# Google sync secrets (never commit)
+secrets/
+service-account*.json
+google-sync.json

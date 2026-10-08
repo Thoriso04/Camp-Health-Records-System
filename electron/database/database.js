@@ -16,6 +16,16 @@ const fs = require('fs');
 const Database = require('better-sqlite3-multiple-ciphers');
 
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
+const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+
+// schema.sql is the fixed v2 baseline and is only ever applied to a brand-new
+// database. Everything after v2 is a numbered migration applied in order, to
+// fresh and existing databases alike, so laptops already in the field pick up
+// new tables the next time the app starts.
+const MIGRATIONS = [
+    { version: 3, file: '003_sheet_sync.sql' },
+    { version: 4, file: '004_sync_log_source.sql' },
+];
 
 // kdf_algorithm / hmac_algorithm use integer codes in this driver's
 // PRAGMA dialect (not the string names SQLCipher itself accepts).
@@ -72,6 +82,7 @@ function openEncryptedDatabase(dbFilePath, encryptionKey) {
     db.pragma('busy_timeout = 5000');
 
     applySchema(db);
+    applyMigrations(db);
 
     return db;
 }
@@ -99,6 +110,28 @@ function applySchema(db) {
 }
 
 /**
+ * Applies any numbered migrations newer than the database's current
+ * schema_version. Each migration runs in its own transaction together with
+ * its schema_version row, so a failed migration leaves the database exactly
+ * as it was.
+ *
+ * @param {import('better-sqlite3-multiple-ciphers').Database} db
+ */
+function applyMigrations(db) {
+    for (const migration of MIGRATIONS) {
+        const current = db.prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_version').get().version;
+        if (migration.version <= current) continue;
+
+        console.log(`[Backend DB] Applying migration ${migration.file}...`);
+        const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, migration.file), 'utf8');
+        db.transaction(() => {
+            db.exec(sql);
+            db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(migration.version);
+        })();
+    }
+}
+
+/**
  * Rewraps the database with a new key. Use for periodic key rotation.
  * Requires the CURRENT key to already be applied to `db` via `key = ...`.
  */
@@ -108,5 +141,6 @@ function rekeyDatabase(db, newKey) {
 
 module.exports = {
     openEncryptedDatabase,
+    applyMigrations,
     rekeyDatabase,
-};
+};

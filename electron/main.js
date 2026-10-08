@@ -13,7 +13,11 @@ const { createAuditLogger, ACTION_TYPES } = require('./database/auditLog');
 const { insertPatient, logAuditEvent } = require('./services/dbController');
 const { verifyPassword, hashPassword } = require('./services/authService');
 const { exportOfflineBackup } = require('./services/syncService');
-const { importPatientsFromCsv } = require('./services/csvImportService');
+const { runGoogleSheetSync, previewGoogleSheet, getSheetSyncStatus } = require('./services/sheetSyncService');
+const { SheetSyncError } = require('./services/googleSheetsClient');
+const { downloadDrivePhotos } = require('./services/googleDriveClient');
+const { setPatientPhoto } = require('./services/patientPhotoService');
+const { previewRegistrationCsv, importRegistrationCsv } = require('./services/registrationCsvImport');
 const { createPatientProfile } = require('./services/patientProfileService');
 const { findPatient } = require('./services/patientQueryService');
 const { listUsbDrives } = require('./services/usbDetection');
@@ -23,6 +27,7 @@ let mainWindow;
 let dbInstance = null;
 let dbFilePath = null;
 let auditLog = null;
+let sheetSyncInProgress = false;
 
 const DB_ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'dev_db_passphrase';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_key';
@@ -177,18 +182,107 @@ handleIpcSafely(ipcMain, 'audit:verify-chain', getDb, async () => {
   return auditLog.verifyChain();
 });
 
-// Import a camper roster and audit each patient insert in the same transaction.
-handleIpcSafely(ipcMain, 'patient:import-csv', getDb, async (event, importData = {}) => {
+// Google Sheet registration sync. The renderer only ever sees a summary; the
+// service-account key and access token stay in this process. Expected
+// failures (offline, not configured, no access...) come back as
+// { success: false, code, error } rather than being thrown, so they don't
+// pollute security_log the way a genuine unexpected error would.
+handleIpcSafely(ipcMain, 'sheet:status', getDb, async () => {
   const db = getDb();
   if (!db) throw new Error('Database is not available.');
-  return importPatientsFromCsv(db, importData);
+  return getSheetSyncStatus(db, { userDataDir: app.getPath('userData') });
 });
+
+// Read-only look at the sheet: what would a sync do, and which Form-uploaded
+// photos on Google Drive does it need first? Writes nothing.
+handleIpcSafely(ipcMain, 'sheet:preview', getDb, async (event, { campSessionDate, photoFiles } = {}) => {
+  const db = getDb();
+  if (!db) throw new Error('Database is not available.');
+  try {
+    return await previewGoogleSheet(db, { userDataDir: app.getPath('userData'), campSessionDate, photoFiles });
+  } catch (error) {
+    if (error instanceof SheetSyncError) {
+      return { success: false, code: error.code, error: error.message };
+    }
+    throw error;
+  }
+});
+
+// Downloads photos that parents uploaded through the Google Form. The
+// renderer asks for a few at a time, shrinks each to a thumbnail, and passes
+// the thumbnails back with the sync/import request, so full-size photos are
+// never held in memory all at once and never stored.
+handleIpcSafely(ipcMain, 'registration:fetch-drive-photos', getDb, async (event, { fileIds } = {}) => {
+  try {
+    return await downloadDrivePhotos({ userDataDir: app.getPath('userData'), fileIds });
+  } catch (error) {
+    if (error instanceof SheetSyncError) {
+      return { success: false, code: error.code, error: error.message };
+    }
+    throw error;
+  }
+});
+
+handleIpcSafely(ipcMain, 'sheet:sync', getDb, async (event, { importedByUserId, campSessionDate, photoFiles } = {}) => {
+  const db = getDb();
+  if (!db) throw new Error('Database is not available.');
+  if (sheetSyncInProgress) {
+    return { success: false, code: 'BUSY', error: 'A sync is already running. Wait for it to finish.' };
+  }
+
+  sheetSyncInProgress = true;
+  try {
+    return await runGoogleSheetSync(db, {
+      userDataDir: app.getPath('userData'),
+      syncedByUserId: importedByUserId,
+      campSessionDate,
+      photoFiles,
+    });
+  } catch (error) {
+    if (error instanceof SheetSyncError) {
+      return { success: false, code: error.code, error: error.message };
+    }
+    throw error;
+  } finally {
+    sheetSyncInProgress = false;
+  }
+});
+
+// Registration CSV import (a CSV downloaded from the Google response sheet,
+// plus optional photo files). Works fully offline. "Preview" is read-only and
+// lets staff see problems (ambiguous dates, missing photos) before anything is
+// written; "import" then applies exactly what the preview showed. Expected
+// problems come back as { success: false, code, error }, like sheet:sync.
+function handleRegistrationCsv(channel, run) {
+  handleIpcSafely(ipcMain, channel, getDb, async (event, request = {}) => {
+    const db = getDb();
+    if (!db) throw new Error('Database is not available.');
+    try {
+      return run(db, request);
+    } catch (error) {
+      if (error instanceof SheetSyncError) {
+        return { success: false, code: error.code, error: error.message };
+      }
+      throw error;
+    }
+  });
+}
+handleRegistrationCsv('registration:csv-preview', previewRegistrationCsv);
+handleRegistrationCsv('registration:csv-import', importRegistrationCsv);
 
 // Create a patient profile and its audit entry atomically.
 handleIpcSafely(ipcMain, 'patient:create', getDb, async (event, profile = {}) => {
   const db = getDb();
   if (!db) throw new Error('Database is not available.');
   return createPatientProfile(db, profile);
+});
+
+// Physician adds, replaces or removes a child's photo. The role check lives in
+// the service so it holds even if the button is shown by mistake.
+handleIpcSafely(ipcMain, 'patient:set-photo', getDb, async (event, { patientId, photoDataUrl, userId } = {}) => {
+  const db = getDb();
+  if (!db) throw new Error('Database is not available.');
+  return setPatientPhoto(db, { patientId, photoDataUrl, userId });
 });
 
 // 3. Clinical Records Queries
@@ -225,4 +319,4 @@ handleIpcSafely(ipcMain, 'backup:start', getDb, async (event, { driveLetter, fol
   }
 
   return result;
-});
+});
