@@ -14,10 +14,8 @@ import { AllergyAlertBanner } from './AllergyAlertBanner';
  * All completed records are linked to the patient profile and viewable
  * in chronological order."
  *
- * NOTE: calls apiService.request('medshack:save-visit', ...), which
- * does NOT exist in electron/main.js yet — same gap as
- * medication:save-checkin in MedicationCheckIn.tsx. Needs a backend
- * handler before this can actually persist anything.
+ * Saves via the 'medshack:save-visit' IPC channel (electron/services/clinicalFormsService.js).
+ * A draft can be re-saved; once finalised, the record is locked.
  */
 
 interface PatientSummary {
@@ -29,23 +27,34 @@ interface PatientSummary {
 
 interface MedShackVisitRecordProps {
   patient: PatientSummary;
+  /** A saved draft to carry on with (from the Saved records list). */
+  resume?: {
+    visitId: string;
+    clinicianName: string;
+    clinicianRole: string;
+    reason: string;
+    treatmentProvided: string;
+    disposition: string;
+    initiatedAt: string;
+  } | null;
   onSaved?: () => void;
   onCancel?: () => void;
 }
 
 type Status = 'draft' | 'final';
 
-export default function MedShackVisitRecord({ patient, onSaved, onCancel }: MedShackVisitRecordProps) {
+export default function MedShackVisitRecord({ patient, resume, onSaved, onCancel }: MedShackVisitRecordProps) {
   const { user } = useAuth();
-  const initiatedAt = useState(() => new Date())[0];
+  const initiatedAt = useState(() => (resume?.initiatedAt ? new Date(resume.initiatedAt) : new Date()))[0];
 
-  const [clinicianName, setClinicianName] = useState(user?.username ?? '');
-  const [clinicianRole, setClinicianRole] = useState(user?.role ?? '');
-  const [reason, setReason] = useState('');
-  const [treatmentProvided, setTreatmentProvided] = useState('');
-  const [disposition, setDisposition] = useState('');
+  const [clinicianName, setClinicianName] = useState(resume?.clinicianName ?? user?.username ?? '');
+  const [clinicianRole, setClinicianRole] = useState(resume?.clinicianRole ?? user?.role ?? '');
+  const [reason, setReason] = useState(resume?.reason ?? '');
+  const [treatmentProvided, setTreatmentProvided] = useState(resume?.treatmentProvided ?? '');
+  const [disposition, setDisposition] = useState(resume?.disposition ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [visitId, setVisitId] = useState<string | null>(resume?.visitId ?? null);
   const [savedStatus, setSavedStatus] = useState<Status | null>(null);
 
   const validateForFinal = (): boolean => {
@@ -63,8 +72,10 @@ export default function MedShackVisitRecord({ patient, onSaved, onCancel }: MedS
     setSaving(true);
 
     try {
-      await apiService.request('medshack:save-visit', {
+      const result = await apiService.requestOrThrow<{ id?: string }>('medshack:save-visit', {
         patientId: patient.id,
+        userId: user?.userId,
+        visitId,
         status,
         initiatedAt: initiatedAt.toISOString(),
         clinicianName,
@@ -73,14 +84,11 @@ export default function MedShackVisitRecord({ patient, onSaved, onCancel }: MedS
         treatmentProvided,
         disposition,
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: status === 'final' ? 'MEDSHACK_VISIT_FINALISED' : 'MEDSHACK_VISIT_DRAFT_SAVED',
-      });
+      if (result?.id) setVisitId(result.id);
       setSavedStatus(status);
       if (status === 'final') onSaved?.();
-    } catch {
-      setErrors({ save: "Couldn't save this visit record. Check the connection and try again." });
+    } catch (error) {
+      setErrors({ save: error instanceof Error ? error.message : "Couldn't save this visit record. Try again." });
     } finally {
       setSaving(false);
     }

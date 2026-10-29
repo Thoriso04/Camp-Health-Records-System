@@ -19,6 +19,13 @@ const { downloadDrivePhotos } = require('./services/googleDriveClient');
 const { setPatientPhoto } = require('./services/patientPhotoService');
 const { previewRegistrationCsv, importRegistrationCsv } = require('./services/registrationCsvImport');
 const { createPatientProfile } = require('./services/patientProfileService');
+const {
+  saveMedicationCheckin,
+  saveMedShackVisit,
+  saveIncidentReport,
+  saveStaffCheckin,
+} = require('./services/clinicalFormsService');
+const { listPatientRecords, listReports, getRecord } = require('./services/clinicalRecordsService');
 const { findPatient } = require('./services/patientQueryService');
 const { listUsbDrives } = require('./services/usbDetection');
 const { handleIpcSafely } = require('./utils/errorHandler');
@@ -284,6 +291,27 @@ handleIpcSafely(ipcMain, 'patient:set-photo', getDb, async (event, { patientId, 
   if (!db) throw new Error('Database is not available.');
   return setPatientPhoto(db, { patientId, photoDataUrl, userId });
 });
+
+// Clinical forms (FR-03 to FR-06). Each handler saves the record and its audit
+// entry in a single transaction. Validation errors come back to the form as
+// { success: false, error } with a readable message.
+function handleClinicalForm(channel, save) {
+  handleIpcSafely(ipcMain, channel, getDb, async (event, payload = {}) => {
+    const db = getDb();
+    if (!db) throw new Error('Database is not available.');
+    return save(db, payload);
+  });
+}
+handleClinicalForm('medication:save-checkin', saveMedicationCheckin);
+handleClinicalForm('medshack:save-visit', saveMedShackVisit);
+handleClinicalForm('incident:save-report', saveIncidentReport);
+handleClinicalForm('staff:save-checkin', saveStaffCheckin);
+
+// Viewing saved forms. Roles are re-checked from the database, and opening a
+// single record writes a READ entry to the audit log.
+handleClinicalForm('records:list-for-patient', listPatientRecords);
+handleClinicalForm('records:list-reports', listReports);
+handleClinicalForm('records:get', getRecord);
 
 // 3. Clinical Records Queries
 handleIpcSafely(ipcMain, 'patient:get-by-id', getDb, async (event, searchTerm) => {

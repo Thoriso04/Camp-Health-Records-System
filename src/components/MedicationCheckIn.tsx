@@ -26,8 +26,7 @@ import SignaturePad from './SignaturePad';
  * there, since the real Registration/Indemnity form doesn't have them
  * at all. They belong here.
  *
- * NOTE: apiService.request('medication:save-checkin', ...) still not a
- * real IPC handler.
+ * Saves via the 'medication:save-checkin' IPC channel (electron/services/clinicalFormsService.js).
  */
 
 interface PatientSummary {
@@ -105,8 +104,9 @@ export default function MedicationCheckIn({ patient, onSaved, onCancel }: Medica
     setSaving(true);
 
     try {
-      await apiService.request('medication:save-checkin', {
+      await apiService.requestOrThrow('medication:save-checkin', {
         patientId: patient.id,
+        userId: user?.userId,
         accessibility: { eyesight, hearing, mobilityAids, prosthesis, other: otherAccessibility },
         dailyLivingAssistance: { assistShowerBath, assistDressing, assistToileting, assistEating },
         tbScreening: { coughOver2Weeks, unexplainedWeightLoss, nightSweatsOrFevers },
@@ -121,14 +121,10 @@ export default function MedicationCheckIn({ patient, onSaved, onCancel }: Medica
         medicalPersonSignature,
         signedAt: new Date().toISOString(),
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: 'MEDICATION_CHECKIN_SAVED',
-      });
       setSaved(true);
       onSaved?.();
-    } catch {
-      setErrors({ save: "Couldn't save this record. Check the connection and try again." });
+    } catch (error) {
+      setErrors({ save: error instanceof Error ? error.message : "Couldn't save this record. Try again." });
     } finally {
       setSaving(false);
     }

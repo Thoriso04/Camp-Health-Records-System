@@ -14,11 +14,8 @@ import { useAuth } from '../context/AuthContext';
  * (Section 6, Security). Retention: 12 months, pending legal
  * confirmation (OI-04) — NOT the 10-year camper retention period.
  *
- * NOTE: calls apiService.request('staff:save-checkin', ...), which does
- * NOT exist in electron/main.js yet — same backend gap as the other
- * three forms. This one especially needs its own database table,
- * separate from the campers table, per the spec's storage-separation
- * requirement above.
+ * Saves via the 'staff:save-checkin' IPC channel (electron/services/clinicalFormsService.js)
+ * into the staff_checkins table, which has no link to camper records.
  */
 
 interface StaffCheckInProps {
@@ -61,7 +58,7 @@ export default function StaffCheckIn({ onSaved, onCancel }: StaffCheckInProps) {
     try {
       // Stored in a separate staff_checkins table, never joined with
       // camper records — see Section 6 Security in the tech spec.
-      await apiService.request('staff:save-checkin', {
+      await apiService.requestOrThrow('staff:save-checkin', {
         fullName,
         role,
         campSite,
@@ -72,14 +69,10 @@ export default function StaffCheckIn({ onSaved, onCancel }: StaffCheckInProps) {
         disposition,
         recordedByUserId: user?.userId,
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: 'STAFF_CHECKIN_SAVED',
-      });
       setSaved(true);
       onSaved?.();
-    } catch {
-      setErrors({ save: "Couldn't save this check-in. Check the connection and try again." });
+    } catch (error) {
+      setErrors({ save: error instanceof Error ? error.message : "Couldn't save this check-in. Try again." });
     } finally {
       setSaving(false);
     }
