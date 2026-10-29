@@ -25,6 +25,7 @@ const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const MIGRATIONS = [
     { version: 3, file: '003_sheet_sync.sql' },
     { version: 4, file: '004_sync_log_source.sql' },
+    { version: 5, file: '005_clinical_forms.sql' },
 ];
 
 // kdf_algorithm / hmac_algorithm use integer codes in this driver's

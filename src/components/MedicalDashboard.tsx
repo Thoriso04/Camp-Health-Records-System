@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, LogOut, ShieldCheck, Pill, ClipboardList, AlertTriangle, UserPlus, Users } from 'lucide-react';
+import { Search, LogOut, ShieldCheck, Pill, ClipboardList, AlertTriangle, UserPlus, Users, FolderOpen } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 import { AllergyAlertBanner } from './AllergyAlertBanner';
@@ -15,6 +15,9 @@ import SheetSync from './SheetSync';
 import RegistrationCsvImport from './RegistrationCsvImport';
 import PatientPhoto from './PatientPhoto';
 import UsbBackup from './UsbBackup';
+import RecordViewer, { RecordKind, VisitDraft } from './RecordViewer';
+import PatientRecordHistory from './PatientRecordHistory';
+import FiledReportsList from './FiledReportsList';
 
 interface PatientRecord {
   id: string;
@@ -27,7 +30,17 @@ interface PatientRecord {
   photoDataUrl?: string | null;
 }
 
-type ActiveForm = 'none' | 'medication' | 'medshack' | 'incident' | 'staff-checkin' | 'new-patient';
+type ActiveForm =
+  | 'none'
+  | 'medication'
+  | 'medshack'
+  | 'incident'
+  | 'staff-checkin'
+  | 'new-patient'
+  | 'viewer'
+  | 'report-list';
+
+type ReportKind = 'incident' | 'staff';
 
 export default function MedicalDashboard() {
   const { user, logout } = useAuth();
@@ -36,6 +49,22 @@ export default function MedicalDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeForm, setActiveForm] = useState<ActiveForm>('none');
+  // Viewing saved records. `viewerReturn` is where the Back button goes.
+  const [viewing, setViewing] = useState<{ kind: RecordKind; id: string } | null>(null);
+  const [viewerReturn, setViewerReturn] = useState<'none' | 'report-list'>('none');
+  const [reportKind, setReportKind] = useState<ReportKind>('incident');
+  const [resumeDraft, setResumeDraft] = useState<VisitDraft | null>(null);
+
+  const openRecord = (kind: RecordKind, id: string, returnTo: 'none' | 'report-list') => {
+    setViewing({ kind, id });
+    setViewerReturn(returnTo);
+    setActiveForm('viewer');
+  };
+
+  const openReportList = (kind: ReportKind) => {
+    setReportKind(kind);
+    setActiveForm('report-list');
+  };
 
   const loadPatient = async (searchTerm: string) => {
     setError('');
@@ -153,8 +182,15 @@ export default function MedicalDashboard() {
         {activeForm === 'medshack' && patient && (
           <MedShackVisitRecord
             patient={patient}
-            onCancel={() => setActiveForm('none')}
-            onSaved={() => setActiveForm('none')}
+            resume={resumeDraft}
+            onCancel={() => {
+              setResumeDraft(null);
+              setActiveForm('none');
+            }}
+            onSaved={() => {
+              setResumeDraft(null);
+              setActiveForm('none');
+            }}
           />
         )}
         {activeForm === 'incident' && (
@@ -168,6 +204,25 @@ export default function MedicalDashboard() {
           <StaffCheckIn
             onCancel={() => setActiveForm('none')}
             onSaved={() => setActiveForm('none')}
+          />
+        )}
+        {activeForm === 'viewer' && viewing && (
+          <RecordViewer
+            kind={viewing.kind}
+            id={viewing.id}
+            backLabel={viewerReturn === 'report-list' ? 'Back to list' : 'Back to patient'}
+            onClose={() => setActiveForm(viewerReturn)}
+            onResumeDraft={(draft) => {
+              setResumeDraft(draft);
+              setActiveForm('medshack');
+            }}
+          />
+        )}
+        {activeForm === 'report-list' && (
+          <FiledReportsList
+            kind={reportKind}
+            onOpen={(kind, id) => openRecord(kind, id, 'report-list')}
+            onClose={() => setActiveForm('none')}
           />
         )}
         {activeForm === 'new-patient' && (
@@ -255,6 +310,14 @@ export default function MedicalDashboard() {
                 </button>
               </ProtectedView>
             </div>
+
+            <ProtectedView requiredPermission="VIEW_CLINICAL_RECORDS">
+              <PatientRecordHistory
+                key={patient.databaseId}
+                patientId={patient.databaseId}
+                onOpen={(kind, id) => openRecord(kind, id, 'none')}
+              />
+            </ProtectedView>
           </div>
         )}
 
@@ -282,6 +345,33 @@ export default function MedicalDashboard() {
                 </div>
               </button>
             </ProtectedView>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ProtectedView requiredPermission="FILE_INCIDENT_REPORT">
+                <button
+                  onClick={() => openReportList('incident')}
+                  className="flex items-center gap-3 rounded border border-slate-200 bg-white p-4 text-left shadow-card hover:border-clinical-500 hover:bg-clinical-50"
+                >
+                  <FolderOpen className="h-5 w-5 text-clinical-500" aria-hidden="true" />
+                  <div>
+                    <p className="text-sm font-semibold text-ink">View filed incident reports</p>
+                    <p className="text-xs text-slate-500">Read-only. Restricted access.</p>
+                  </div>
+                </button>
+              </ProtectedView>
+              <ProtectedView requiredPermission="EDIT_CLINICAL_RECORDS">
+                <button
+                  onClick={() => openReportList('staff')}
+                  className="flex items-center gap-3 rounded border border-slate-200 bg-white p-4 text-left shadow-card hover:border-clinical-500 hover:bg-clinical-50"
+                >
+                  <FolderOpen className="h-5 w-5 text-clinical-500" aria-hidden="true" />
+                  <div>
+                    <p className="text-sm font-semibold text-ink">View staff and crew check-ins</p>
+                    <p className="text-xs text-slate-500">Stored separately from campers.</p>
+                  </div>
+                </button>
+              </ProtectedView>
+            </div>
 
             <ProtectedView requiredPermission="VIEW_AUDIT_LOGS">
               <AuditLogViewer />

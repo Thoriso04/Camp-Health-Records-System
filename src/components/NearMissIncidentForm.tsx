@@ -20,9 +20,8 @@ import { useAuth } from '../context/AuthContext';
  *   payload so the backend can create that link; the encryption itself
  *   happens at the database layer, not here.
  *
- * NOTE: calls apiService.request('incident:save-report', ...), which
- * does NOT exist in electron/main.js yet — same backend gap as the
- * other two forms.
+ * Saves via the 'incident:save-report' IPC channel (electron/services/clinicalFormsService.js).
+ * Filed reports are insert-only: database triggers block edits and deletes.
  */
 
 type Classification = 'near-miss' | 'medication-error' | 'treatment-error' | 'other';
@@ -133,7 +132,7 @@ export default function NearMissIncidentForm({ initialPatientName, onSaved, onCa
     setSaving(true);
 
     try {
-      await apiService.request('incident:save-report', {
+      await apiService.requestOrThrow('incident:save-report', {
         classification,
         dateTime,
         location,
@@ -145,14 +144,10 @@ export default function NearMissIncidentForm({ initialPatientName, onSaved, onCa
         recommendations,
         reportedByUserId: user?.userId,
       });
-      await apiService.request('audit:log-event', {
-        userId: user?.userId,
-        action: 'INCIDENT_REPORT_FILED',
-      });
       setSaved(true);
       onSaved?.();
-    } catch {
-      setErrors({ save: "Couldn't save this report. Check the connection and try again." });
+    } catch (error) {
+      setErrors({ save: error instanceof Error ? error.message : "Couldn't save this report. Try again." });
     } finally {
       setSaving(false);
     }
