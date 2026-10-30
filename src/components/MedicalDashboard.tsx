@@ -10,6 +10,7 @@ import MedShackVisitRecord from './MedShackVisitRecord';
 import NearMissIncidentForm from './NearMissIncidentForm';
 import StaffCheckIn from './StaffCheckIn';
 import NewPatientProfile from './NewPatientProfile';
+import EditPatientProfile from './EditPatientProfile';
 import AuditLogViewer from './AuditLogViewer';
 import SheetSync from './SheetSync';
 import RegistrationCsvImport from './RegistrationCsvImport';
@@ -37,6 +38,7 @@ type ActiveForm =
   | 'incident'
   | 'staff-checkin'
   | 'new-patient'
+  | 'edit-patient'
   | 'viewer'
   | 'report-list';
 
@@ -225,6 +227,18 @@ export default function MedicalDashboard() {
             onClose={() => setActiveForm('none')}
           />
         )}
+        {activeForm === 'edit-patient' && patient && (
+          <EditPatientProfile
+            patientId={patient.databaseId}
+            onCancel={() => setActiveForm('none')}
+            onSaved={async () => {
+              // Reload so the allergy banner and patient card show the new details.
+              // Leave the form first, so a failed reload lands on the search view with its error.
+              setActiveForm('none');
+              await loadPatient(patient.databaseId);
+            }}
+          />
+        )}
         {activeForm === 'new-patient' && (
           <NewPatientProfile
             onCancel={() => setActiveForm('none')}
@@ -259,7 +273,10 @@ export default function MedicalDashboard() {
                   </div>
                 </div>
                 <ProtectedView requiredPermission="EDIT_CLINICAL_RECORDS">
-                  <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-clinical-600 hover:bg-clinical-50">
+                  <button
+                    onClick={() => setActiveForm('edit-patient')}
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-clinical-600 hover:bg-clinical-50"
+                  >
                     Edit record
                   </button>
                 </ProtectedView>

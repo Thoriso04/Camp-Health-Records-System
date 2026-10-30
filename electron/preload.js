@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const validChannels = [
       'auth:login',
       'patient:get-by-id',
+      'patient:get-profile',
       'patient:save-record',
       'patient:create',
       'medication:save-checkin',

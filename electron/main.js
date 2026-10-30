@@ -19,6 +19,7 @@ const { downloadDrivePhotos } = require('./services/googleDriveClient');
 const { setPatientPhoto } = require('./services/patientPhotoService');
 const { previewRegistrationCsv, importRegistrationCsv } = require('./services/registrationCsvImport');
 const { createPatientProfile } = require('./services/patientProfileService');
+const { getPatientProfile, updatePatientProfile } = require('./services/patientUpdateService');
 const {
   saveMedicationCheckin,
   saveMedShackVisit,
@@ -282,6 +283,21 @@ handleIpcSafely(ipcMain, 'patient:create', getDb, async (event, profile = {}) =>
   const db = getDb();
   if (!db) throw new Error('Database is not available.');
   return createPatientProfile(db, profile);
+});
+
+// Edit an existing camper profile (dashboard "Edit record"). Both handlers
+// re-check the signed-in user's role in the database; the update and its audit
+// entry are one transaction.
+handleIpcSafely(ipcMain, 'patient:get-profile', getDb, async (event, request = {}) => {
+  const db = getDb();
+  if (!db) throw new Error('Database is not available.');
+  return getPatientProfile(db, request);
+});
+
+handleIpcSafely(ipcMain, 'patient:save-record', getDb, async (event, request = {}) => {
+  const db = getDb();
+  if (!db) throw new Error('Database is not available.');
+  return updatePatientProfile(db, request);
 });
 
 // Physician adds, replaces or removes a child's photo. The role check lives in
