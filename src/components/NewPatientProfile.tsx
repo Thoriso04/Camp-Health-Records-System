@@ -44,7 +44,7 @@ interface NewPatientProfileProps {
   onCancel?: () => void;
 }
 
-function TagInput({
+export function TagInput({
   values,
   onChange,
   placeholder,
@@ -89,7 +89,7 @@ function TagInput({
   );
 }
 
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+export function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex items-center gap-2 text-sm text-ink">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />

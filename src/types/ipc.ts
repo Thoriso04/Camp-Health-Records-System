@@ -1,6 +1,7 @@
 export enum IPC_CHANNELS {
   AUTH_LOGIN = 'auth:login',
   PATIENT_GET_BY_ID = 'patient:get-by-id',
+  PATIENT_GET_PROFILE = 'patient:get-profile',
   PATIENT_SAVE = 'patient:save-record',
   PATIENT_CREATE = 'patient:create',
   PATIENT_SET_PHOTO = 'patient:set-photo',
